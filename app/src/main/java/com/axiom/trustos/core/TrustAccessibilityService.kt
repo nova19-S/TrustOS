@@ -81,6 +81,45 @@ class TrustAccessibilityService : AccessibilityService() {
 
         val rootNode = rootInActiveWindow ?: return
 
+        android.util.Log.d(
+            TAG,
+            "📸 OCR TEST: requesting screenshot..."
+        )
+
+        screenCaptureHelper.capture(
+            onSuccess = { bitmap ->
+
+                ocrEngine.recognizeText(
+                    bitmap = bitmap,
+
+                    onSuccess = { text ->
+                        android.util.Log.d(
+                            TAG,
+                            "📸 OCR RESULT:\n$text"
+                        )
+
+                        bitmap.recycle()
+                    },
+
+                    onFailure = { exception ->
+                        android.util.Log.e(
+                            TAG,
+                            "❌ OCR failed",
+                            exception
+                        )
+
+                        bitmap.recycle()
+                    }
+                )
+            },
+
+            onFailure = { errorCode ->
+                android.util.Log.e(
+                    TAG,
+                    "❌ Screen capture failed. Error code: $errorCode"
+                )
+            }
+        )
 
         val visibleText = extractVisibleText(rootNode)
 
