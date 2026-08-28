@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">TrustOS</string>
+
+    <string name="accessibility_service_description">
+        TrustOS analyzes visible content for potential security risks while respecting privacy-sensitive contexts.
+    </string>
+</resources>
