@@ -1,5 +1,6 @@
 package com.axiom.trustos.core
 
+import com.axiom.trustos.core.ocr.OcrEngine
 import com.axiom.trustos.core.model.RiskLevel
 import com.axiom.trustos.ui.WarningOverlay
 import android.util.Patterns
@@ -21,6 +22,9 @@ class TrustAccessibilityService : AccessibilityService() {
 
     private lateinit var warningOverlay: WarningOverlay
 
+    private lateinit var ocrEngine: OcrEngine
+    private lateinit var screenCaptureHelper: ScreenCaptureHelper
+
     private val secureAnalysisEngine = SecureAnalysisEngine(
         privacyController = PrivacyController(),
         analysisEngine = AnalysisEngine(
@@ -30,7 +34,7 @@ class TrustAccessibilityService : AccessibilityService() {
         )
     )
 
-    private var suppressedScreenKey: Int? = null
+    private var suppressedThreatKey: String? = null
 
     private var lastPackageName: String? = null
 
@@ -41,6 +45,9 @@ class TrustAccessibilityService : AccessibilityService() {
 
         warningOverlay = WarningOverlay(this)
 
+        ocrEngine = OcrEngine()
+        screenCaptureHelper = ScreenCaptureHelper(this)
+
         android.util.Log.d(
             TAG,
             "TrustOS Accessibility Service connected"
@@ -48,6 +55,11 @@ class TrustAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+
+        android.util.Log.d(
+            TAG,
+            "🧪 EVENT RECEIVED"
+        )
 
         if (event == null) {
             return
@@ -64,10 +76,11 @@ class TrustAccessibilityService : AccessibilityService() {
         if (lastPackageName != packageName) {
             lastPackageName = packageName
             lastAnalyzedKey = null
-            suppressedScreenKey = null
+            suppressedThreatKey = null
         }
 
         val rootNode = rootInActiveWindow ?: return
+
 
         val visibleText = extractVisibleText(rootNode)
 
@@ -93,11 +106,22 @@ class TrustAccessibilityService : AccessibilityService() {
          * User already dismissed this exact screen.
          * Do not show the warning again until the screen/content changes.
          */
-        if (analysisKey == suppressedScreenKey) {
-            return
-        }
 
         val detectedUrl = extractUrl(visibleText)
+
+        val threatKey = createThreatKey(
+            packageName = packageName,
+            text = visibleText,
+            url = detectedUrl
+        )
+
+        if (threatKey == suppressedThreatKey) {
+            android.util.Log.d(
+                TAG,
+                "🛑 Same dismissed threat. Suppressing warning."
+            )
+            return
+        }
 
         val appContext =
             contextDetector.classifyPackage(packageName)
@@ -159,7 +183,7 @@ class TrustAccessibilityService : AccessibilityService() {
              * Remember that the user has already been warned
              * about this exact screen.
              */
-            suppressedScreenKey = analysisKey
+            suppressedThreatKey = threatKey
 
             warningOverlay.show(assessment)
         }
@@ -225,6 +249,21 @@ class TrustAccessibilityService : AccessibilityService() {
             TAG,
             "TrustOS Accessibility Service interrupted"
         )
+    }
+
+    private fun createThreatKey(
+        packageName: String,
+        text: String,
+        url: String?
+    ): String {
+
+        val stableText = text
+            .lowercase()
+            .replace(Regex("\\d{1,2}:\\d{2}"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return "$packageName|$url|$stableText".hashCode().toString()
     }
 
     private fun extractUrl(text: String): String? {
