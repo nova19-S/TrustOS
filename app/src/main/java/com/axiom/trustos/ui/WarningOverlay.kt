@@ -1,10 +1,12 @@
 package com.axiom.trustos.ui
 
-import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -15,203 +17,293 @@ import com.axiom.trustos.core.model.RiskAssessment
 import com.axiom.trustos.core.model.RiskLevel
 
 class WarningOverlay(
-    private val context: Context
+    private val context: Context,
+    private val onIgnore: (String) -> Unit
 ) {
 
     private val windowManager =
         context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+    private val mainHandler =
+        Handler(Looper.getMainLooper())
+
     private var overlayView: View? = null
+    private var currentThreatKey: String? = null
 
-    fun show(assessment: RiskAssessment) {
+    fun show(
+        assessment: RiskAssessment,
+        threatKey: String
+    ) {
+        mainHandler.post {
 
-        if (overlayView != null) {
-            return
-        }
-
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 40)
-            setBackgroundColor(Color.WHITE)
-        }
-
-        val title = TextView(context).apply {
-            text = "🛡️ TrustOS"
-            textSize = 24f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.BLACK)
-        }
-
-        val warning = TextView(context).apply {
-            text = "Potential Risk Detected"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.RED)
-            setPadding(0, 20, 0, 20)
-        }
-
-        val score = TextView(context).apply {
-            text = "Risk Score: ${assessment.score}/100"
-            textSize = 18f
-            setTextColor(Color.DKGRAY)
-        }
-
-        val level = TextView(context).apply {
-            text = "Risk Level: ${assessment.level}"
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(
-                when (assessment.level) {
-                    RiskLevel.CRITICAL -> Color.RED
-                    RiskLevel.HIGH -> Color.rgb(220, 120, 0)
-                    else -> Color.DKGRAY
-                }
+            android.util.Log.d(
+                "TrustOSOverlay",
+                "SHOW REQUESTED: $threatKey"
             )
-            setPadding(0, 10, 0, 10)
-        }
 
-        val confidencePercent =
-            (assessment.confidence * 100).toInt()
+            if (overlayView != null) {
+                android.util.Log.d(
+                    "TrustOSOverlay",
+                    "OVERLAY ALREADY VISIBLE"
+                )
+                return@post
+            }
 
-        val confidence = TextView(context).apply {
-            text = "Confidence: $confidencePercent%"
-            textSize = 17f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 5, 0, 15)
-        }
+            currentThreatKey = threatKey
 
-        val reasons = TextView(context).apply {
-            text = if (assessment.reasons.isEmpty()) {
-                "⚠ Suspicious activity detected."
-            } else {
-                assessment.reasons.joinToString(
-                    separator = "\n"
-                ) { reason ->
-                    "⚠ $reason"
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(24), dp(22), dp(24), dp(22))
+                background = GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    cornerRadius = dp(18).toFloat()
+                    setStroke(dp(2), Color.RED)
+                }
+                elevation = dp(12).toFloat()
+            }
+
+            val title = TextView(context).apply {
+                text = "🛡️ TrustOS"
+                textSize = 25f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.BLACK)
+            }
+
+            val warning = TextView(context).apply {
+                text = "⚠️ Potential Risk Detected"
+                textSize = 19f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.RED)
+                setPadding(0, dp(14), 0, dp(14))
+            }
+
+            val score = TextView(context).apply {
+                text = "Risk Score: ${assessment.score}/100"
+                textSize = 18f
+                setTextColor(Color.DKGRAY)
+            }
+
+            val level = TextView(context).apply {
+                text = "Risk Level: ${assessment.level}"
+                textSize = 18f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(
+                    when (assessment.level) {
+                        RiskLevel.CRITICAL -> Color.RED
+                        RiskLevel.HIGH -> Color.rgb(220, 120, 0)
+                        else -> Color.DKGRAY
+                    }
+                )
+                setPadding(0, dp(8), 0, dp(8))
+            }
+
+            val confidencePercent =
+                (assessment.confidence * 100).toInt()
+
+            val confidence = TextView(context).apply {
+                text = "Confidence: $confidencePercent%"
+                textSize = 17f
+                setTextColor(Color.DKGRAY)
+                setPadding(0, dp(4), 0, dp(18))
+            }
+
+            val detailsButton = Button(context).apply {
+                text = "View Details"
+                setOnClickListener {
+                    showDetails(assessment)
                 }
             }
 
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 10, 0, 20)
-        }
+            val ignoreButton = Button(context).apply {
+                text = "Ignore"
+                setOnClickListener {
 
-        val detailsButton = Button(context).apply {
-            text = "View Details"
+                    val key = currentThreatKey
 
-            setOnClickListener {
-                showDetails(assessment)
+                    android.util.Log.d(
+                        "TrustOSOverlay",
+                        "IGNORE CLICKED: $key"
+                    )
+
+                    if (!key.isNullOrBlank()) {
+                        onIgnore(key)
+                    }
+
+                    hide()
+                }
             }
+
+            container.addView(title)
+            container.addView(warning)
+            container.addView(score)
+            container.addView(level)
+            container.addView(confidence)
+            container.addView(detailsButton)
+            container.addView(ignoreButton)
+
+            addOverlay(container)
         }
-
-        val closeButton = Button(context).apply {
-            text = "Ignore"
-
-            setOnClickListener {
-                hide()
-            }
-        }
-
-        container.addView(title)
-        container.addView(warning)
-        container.addView(score)
-        container.addView(level)
-        container.addView(confidence)
-        container.addView(reasons)
-        container.addView(detailsButton)
-        container.addView(closeButton)
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-        }
-
-        windowManager.addView(container, params)
-
-        overlayView = container
     }
 
-    private fun showDetails(assessment: RiskAssessment) {
+    private fun showDetails(
+        assessment: RiskAssessment
+    ) {
+        mainHandler.post {
 
-        val detailsContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(50, 40, 50, 40)
-            setBackgroundColor(Color.WHITE)
-        }
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(24), dp(22), dp(24), dp(22))
+                background = GradientDrawable().apply {
+                    setColor(Color.WHITE)
+                    cornerRadius = dp(18).toFloat()
+                    setStroke(dp(2), Color.DKGRAY)
+                }
+                elevation = dp(12).toFloat()
+            }
 
-        val title = TextView(context).apply {
-            text = "🛡️ Why TrustOS warned you"
-            textSize = 22f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.BLACK)
-        }
+            val title = TextView(context).apply {
+                text = "🛡️ Why TrustOS warned you"
+                textSize = 22f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.BLACK)
+            }
 
-        val confidencePercent =
-            (assessment.confidence * 100).toInt()
+            val confidencePercent =
+                (assessment.confidence * 100).toInt()
 
-        val explanation = TextView(context).apply {
-            text = buildString {
-                append("Risk Score: ${assessment.score}/100\n")
-                append("Risk Level: ${assessment.level}\n")
-                append("Confidence: $confidencePercent%\n\n")
-                append("TrustOS detected:\n\n")
+            val explanation = TextView(context).apply {
 
-                if (assessment.reasons.isEmpty()) {
-                    append("No specific reasons available.")
-                } else {
-                    assessment.reasons.forEach {
-                        append("⚠ $it\n")
+                text = buildString {
+
+                    append(
+                        "Risk Score: ${assessment.score}/100\n"
+                    )
+
+                    append(
+                        "Risk Level: ${assessment.level}\n"
+                    )
+
+                    append(
+                        "Confidence: $confidencePercent%\n\n"
+                    )
+
+                    append(
+                        "TrustOS detected:\n\n"
+                    )
+
+                    if (assessment.reasons.isEmpty()) {
+
+                        append(
+                            "No specific reasons available."
+                        )
+
+                    } else {
+
+                        assessment.reasons.forEach { reason ->
+                            append("⚠ $reason\n")
+                        }
                     }
+                }
+
+                textSize = 16f
+                setTextColor(Color.DKGRAY)
+                setPadding(0, dp(18), 0, dp(18))
+            }
+
+            val closeButton = Button(context).apply {
+                text = "Close"
+                setOnClickListener {
+                    hide()
                 }
             }
 
-            textSize = 16f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 20, 0, 20)
+            container.addView(title)
+            container.addView(explanation)
+            container.addView(closeButton)
+
+            removeCurrentOverlay()
+            addOverlay(container)
         }
+    }
 
-        val backButton = Button(context).apply {
-            text = "Close"
-
-            setOnClickListener {
-                hide()
-            }
-        }
-
-        detailsContainer.addView(title)
-        detailsContainer.addView(explanation)
-        detailsContainer.addView(backButton)
+    private fun addOverlay(
+        view: View
+    ) {
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
+            dp(340),
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.CENTER
         }
 
-        overlayView?.let {
-            windowManager.removeView(it)
+        try {
+
+            windowManager.addView(
+                view,
+                params
+            )
+
+            overlayView = view
+
+            android.util.Log.d(
+                "TrustOSOverlay",
+                "OVERLAY ADDED SUCCESSFULLY"
+            )
+
+        } catch (e: Exception) {
+
+            android.util.Log.e(
+                "TrustOSOverlay",
+                "OVERLAY FAILED",
+                e
+            )
+
+            overlayView = null
+            currentThreatKey = null
+        }
+    }
+
+    private fun removeCurrentOverlay() {
+
+        overlayView?.let { view ->
+
+            try {
+                windowManager.removeView(view)
+            } catch (e: Exception) {
+                android.util.Log.e(
+                    "TrustOSOverlay",
+                    "REMOVE OVERLAY FAILED",
+                    e
+                )
+            }
         }
 
-        windowManager.addView(detailsContainer, params)
-
-        overlayView = detailsContainer
+        overlayView = null
     }
 
     fun hide() {
 
-        overlayView?.let {
-            windowManager.removeView(it)
-        }
+        mainHandler.post {
 
-        overlayView = null
+            android.util.Log.d(
+                "TrustOSOverlay",
+                "HIDE"
+            )
+
+            removeCurrentOverlay()
+            currentThreatKey = null
+        }
+    }
+
+    private fun dp(value: Int): Int {
+        return (
+                value *
+                        context.resources.displayMetrics.density
+                ).toInt()
     }
 }
