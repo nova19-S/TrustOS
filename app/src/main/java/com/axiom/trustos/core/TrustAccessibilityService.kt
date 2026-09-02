@@ -1,6 +1,7 @@
 package com.axiom.trustos.core
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
 import android.util.Patterns
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -24,13 +25,13 @@ class TrustAccessibilityService : AccessibilityService() {
     private lateinit var warningOverlay: WarningOverlay
     private lateinit var ocrEngine: OcrEngine
     private lateinit var screenCaptureHelper: ScreenCaptureHelper
-
     private lateinit var secureAnalysisEngine: SecureAnalysisEngine
 
     private var lastPackageName: String? = null
     private var lastWindowId = -1
     private var lastAnalyzedKey: String? = null
     private var activeThreatKey: String? = null
+    private var ocrInProgressKey: String? = null
 
     private val dismissedOnCurrentScreen = mutableSetOf<String>()
 
@@ -85,6 +86,7 @@ class TrustAccessibilityService : AccessibilityService() {
             lastWindowId = event.windowId
             lastAnalyzedKey = null
             activeThreatKey = null
+            ocrInProgressKey = null
             dismissedOnCurrentScreen.clear()
 
             warningOverlay.hide()
@@ -103,31 +105,213 @@ class TrustAccessibilityService : AccessibilityService() {
         val visibleText =
             extractVisibleText(rootNode)
 
+
         if (visibleText.isBlank()) {
             android.util.Log.d(
                 TAG,
-                "No visible text"
+                "No visible text, trying OCR"
+            )
+
+            captureAndAnalyzeWithOcr(
+                packageName = packageName,
+                windowId = event.windowId,
+                appContext = contextDetector.classifyPackage(packageName)
+            )
+
+            return
+        }
+
+        if (visibleText.length < 80) {
+            android.util.Log.d(
+                TAG,
+                "Insufficient visible text, trying OCR"
+            )
+
+            captureAndAnalyzeWithOcr(
+                packageName = packageName,
+                windowId = event.windowId,
+                appContext = contextDetector.classifyPackage(packageName)
+            )
+
+            return
+        }
+
+        val appContext =
+            contextDetector.classifyPackage(packageName)
+
+        val privacyDecision =
+            PrivacyController(this).evaluate(
+                context = appContext,
+                packageName = packageName
+            )
+
+        android.util.Log.d(
+            TAG,
+            "Privacy Mode: ${privacyDecision.mode}"
+        )
+
+        if (privacyDecision.mode != PrivacyMode.SCAN) {
+            android.util.Log.d(
+                TAG,
+                "SCAN PAUSED - OCR will not run"
             )
             return
         }
 
+        if (visibleText.isBlank()) {
+            captureAndAnalyzeWithOcr(
+                packageName = packageName,
+                windowId = event.windowId,
+                appContext = appContext
+            )
+            return
+        }
+
+        analyzeText(
+            packageName = packageName,
+            windowId = event.windowId,
+            appContext = appContext,
+            text = visibleText
+        )
+    }
+
+    private fun captureAndAnalyzeWithOcr(
+        packageName: String,
+        windowId: Int,
+        appContext: com.axiom.trustos.core.privacy.AppContext
+    ) {
+
+        val ocrKey =
+            "$packageName|$windowId|OCR"
+
+        if (ocrInProgressKey == ocrKey) {
+            android.util.Log.d(
+                TAG,
+                "OCR already running for current screen"
+            )
+            return
+        }
+
+        if (lastAnalyzedKey == ocrKey) {
+            return
+        }
+
+        ocrInProgressKey = ocrKey
+
+        android.util.Log.d(
+            TAG,
+            "--------------------------------"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "OCR CAPTURE START"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Package: $packageName"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Window: $windowId"
+        )
+
+        screenCaptureHelper.capture(
+            onSuccess = { bitmap ->
+
+                android.util.Log.d(
+                    TAG,
+                    "SCREENSHOT CAPTURED"
+                )
+
+                ocrEngine.recognizeText(
+                    bitmap = bitmap,
+                    onSuccess = { ocrText ->
+
+                        ocrInProgressKey = null
+
+                        if (
+                            packageName != lastPackageName ||
+                            windowId != lastWindowId
+                        ) {
+                            android.util.Log.d(
+                                TAG,
+                                "OCR result ignored because screen changed"
+                            )
+                            return@recognizeText
+                        }
+
+                        android.util.Log.d(
+                            TAG,
+                            "OCR TEXT: ${ocrText.take(500)}"
+                        )
+
+                        if (ocrText.isBlank()) {
+                            android.util.Log.d(
+                                TAG,
+                                "OCR found no text"
+                            )
+
+                            lastAnalyzedKey = ocrKey
+                            return@recognizeText
+                        }
+
+                        lastAnalyzedKey = ocrKey
+
+                        analyzeText(
+                            packageName = packageName,
+                            windowId = windowId,
+                            appContext = appContext,
+                            text = ocrText
+                        )
+                    },
+                    onFailure = { exception ->
+
+                        ocrInProgressKey = null
+
+                        android.util.Log.e(
+                            TAG,
+                            "OCR FAILED",
+                            exception
+                        )
+                    }
+                )
+            },
+            onFailure = { errorCode ->
+
+                ocrInProgressKey = null
+
+                android.util.Log.e(
+                    TAG,
+                    "SCREENSHOT FAILED | error=$errorCode"
+                )
+            }
+        )
+    }
+
+    private fun analyzeText(
+        packageName: String,
+        windowId: Int,
+        appContext: com.axiom.trustos.core.privacy.AppContext,
+        text: String
+    ) {
+
         val normalizedText =
-            normalizeText(visibleText)
+            normalizeText(text)
+
+        val detectedUrl =
+            extractUrl(text)
 
         val analysisKey =
-            "$packageName|${event.windowId}|$normalizedText"
+            "$packageName|$windowId|$normalizedText"
 
         if (analysisKey == lastAnalyzedKey) {
             return
         }
 
         lastAnalyzedKey = analysisKey
-
-        val appContext =
-            contextDetector.classifyPackage(packageName)
-
-        val detectedUrl =
-            extractUrl(visibleText)
 
         android.util.Log.d(
             TAG,
@@ -146,7 +330,7 @@ class TrustAccessibilityService : AccessibilityService() {
 
         android.util.Log.d(
             TAG,
-            "Window: ${event.windowId}"
+            "Window: $windowId"
         )
 
         android.util.Log.d(
@@ -161,14 +345,14 @@ class TrustAccessibilityService : AccessibilityService() {
 
         android.util.Log.d(
             TAG,
-            "Text: ${visibleText.take(300)}"
+            "Text: ${text.take(300)}"
         )
 
         val result =
             secureAnalysisEngine.analyze(
                 context = appContext,
                 packageName = packageName,
-                text = visibleText,
+                text = text,
                 url = detectedUrl
             )
 
@@ -177,15 +361,11 @@ class TrustAccessibilityService : AccessibilityService() {
             "Privacy Mode: ${result.privacyDecision.mode}"
         )
 
-        if (
-            result.privacyDecision.mode !=
-            PrivacyMode.SCAN
-        ) {
+        if (result.privacyDecision.mode != PrivacyMode.SCAN) {
             android.util.Log.d(
                 TAG,
                 "SCAN PAUSED"
             )
-
             return
         }
 
@@ -234,13 +414,12 @@ class TrustAccessibilityService : AccessibilityService() {
                 TAG,
                 "No warning required"
             )
-
             return
         }
 
         handleThreat(
             packageName = packageName,
-            text = visibleText,
+            text = text,
             url = detectedUrl,
             assessment = assessment
         )
@@ -266,27 +445,19 @@ class TrustAccessibilityService : AccessibilityService() {
             "THREAT KEY: $threatKey"
         )
 
-        if (
-            dismissedOnCurrentScreen.contains(
-                threatKey
-            )
-        ) {
+        if (dismissedOnCurrentScreen.contains(threatKey)) {
             android.util.Log.d(
                 TAG,
                 "Threat suppressed on current screen"
             )
-
             return
         }
 
-        if (
-            activeThreatKey == threatKey
-        ) {
+        if (activeThreatKey == threatKey) {
             android.util.Log.d(
                 TAG,
                 "Same threat already active"
             )
-
             return
         }
 
@@ -309,10 +480,7 @@ class TrustAccessibilityService : AccessibilityService() {
 
         if (threatKey.isBlank()) return
 
-        dismissedOnCurrentScreen.add(
-            threatKey
-        )
-
+        dismissedOnCurrentScreen.add(threatKey)
         activeThreatKey = threatKey
 
         android.util.Log.d(
@@ -326,6 +494,12 @@ class TrustAccessibilityService : AccessibilityService() {
             TAG,
             "Accessibility Service interrupted"
         )
+    }
+
+    override fun onDestroy() {
+        ocrEngine.close()
+        warningOverlay.hide()
+        super.onDestroy()
     }
 
     private fun createThreatKey(
@@ -416,11 +590,26 @@ class TrustAccessibilityService : AccessibilityService() {
         val matcher =
             Patterns.WEB_URL.matcher(text)
 
-        return if (matcher.find()) {
-            matcher.group()
-        } else {
-            null
+        if (matcher.find()) {
+            return matcher.group()
         }
+
+        // OCR often inserts spaces around punctuation in URLs.
+        // Try to recover common shortened URLs from OCR text.
+        val ocrShortUrlPattern =
+            Regex(
+                """https?\s*:\s*/\s*/\s*bit\s*\.\s*ly\b""",
+                RegexOption.IGNORE_CASE
+            )
+
+        val ocrMatch =
+            ocrShortUrlPattern.find(text)
+
+        if (ocrMatch != null) {
+            return "http://bit.ly"
+        }
+
+        return null
     }
 
     private fun extractVisibleText(
@@ -455,15 +644,13 @@ class TrustAccessibilityService : AccessibilityService() {
             }
         }
 
-        node.contentDescription
-            ?.toString()
-            ?.let {
-                if (it.isNotBlank()) {
-                    builder
-                        .append(it)
-                        .append('\n')
-                }
+        node.contentDescription?.toString()?.let {
+            if (it.isNotBlank()) {
+                builder
+                    .append(it)
+                    .append('\n')
             }
+        }
 
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let {
@@ -477,8 +664,7 @@ class TrustAccessibilityService : AccessibilityService() {
 
     companion object {
 
-        private const val TAG =
-            "TrustOS"
+        private const val TAG = "TrustOS"
 
         private val SUSPICIOUS_PHRASES =
             listOf(
