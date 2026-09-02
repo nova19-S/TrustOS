@@ -18,16 +18,26 @@ class SecureAnalysisEngine(
 
     fun analyze(
         context: AppContext,
+        packageName: String,
         text: String? = null,
         url: String? = null
     ): SecureAnalysisResult {
-        val decision = privacyController.evaluate(context)
 
-        val assessment = if (decision.mode == PrivacyMode.SCAN) {
-            analysisEngine.analyze(text = text, url = url)
-        } else {
-            null
-        }
+        val decision =
+            privacyController.evaluate(
+                context = context,
+                packageName = packageName
+            )
+
+        val assessment =
+            if (decision.mode == PrivacyMode.SCAN) {
+                analysisEngine.analyze(
+                    text = text,
+                    url = url
+                )
+            } else {
+                null
+            }
 
         return SecureAnalysisResult(
             privacyDecision = decision,

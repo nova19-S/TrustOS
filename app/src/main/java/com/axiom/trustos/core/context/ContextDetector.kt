@@ -24,6 +24,7 @@ class ContextDetector {
             // Messaging
             "com.whatsapp" to AppContext.MESSAGING,
             "org.telegram.messenger" to AppContext.MESSAGING,
+            "com.axiom.fakechat" to AppContext.MESSAGING,
 
             // SMS
             "com.google.android.apps.messaging" to AppContext.SMS,

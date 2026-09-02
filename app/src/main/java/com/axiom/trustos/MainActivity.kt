@@ -1,5 +1,10 @@
 package com.axiom.trustos
 
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.platform.LocalContext
+import com.axiom.trustos.core.privacy.InstalledAppsProvider
+import com.axiom.trustos.core.privacy.PrivacyProfile
+import com.axiom.trustos.core.privacy.PrivacySettingsRepository
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,19 +46,52 @@ import android.provider.Settings
 class MainActivity : ComponentActivity() {
 
     private var protectionEnabled by mutableStateOf(false)
+    private var showPrivacySettings by mutableStateOf(false)
+    private var privacyProfile by mutableStateOf(PrivacyProfile.STANDARD)
+
+    private lateinit var privacySettingsRepository: PrivacySettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        privacySettingsRepository =
+            PrivacySettingsRepository(applicationContext)
+
+        privacyProfile =
+            privacySettingsRepository.getProfile()
+
         enableEdgeToEdge()
 
         setContent {
             TrustOSTheme {
-                TrustOSDashboard(
-                    protectionEnabled = protectionEnabled,
-                    onEnableOverlay = {
+
+                if (showPrivacySettings) {
+
+                    PrivacySettingsScreen(
+                        currentProfile = privacyProfile,
+                        onProfileSelected = { profile ->
+                            privacyProfile = profile
+
+                            privacySettingsRepository
+                                .setProfile(profile)
+                        },
+                        onBack = {
+                            showPrivacySettings = false
+                        }
+                    )
+
+                } else {
+
+                    TrustOSDashboard(
+                        protectionEnabled = protectionEnabled,
+                        onEnableOverlay = {
                             openProtectionSettings()
-                    }
-                )
+                        },
+                        onOpenPrivacySettings = {
+                            showPrivacySettings = true
+                        }
+                    )
+                }
             }
         }
     }
@@ -116,7 +154,8 @@ private sealed class UrlScanUiState {
 @Composable
 fun TrustOSDashboard(
     protectionEnabled: Boolean,
-    onEnableOverlay: () -> Unit
+    onEnableOverlay: () -> Unit,
+    onOpenPrivacySettings: () -> Unit
 ) {
     val trustEngine = remember { TrustEngine() }
     val urlRiskDetector = remember { UrlRiskDetector() }
@@ -231,6 +270,14 @@ fun TrustOSDashboard(
             ) {
                 Text(text = "Enable TrustOS Protection")
             }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onOpenPrivacySettings,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Privacy Settings")
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -329,6 +376,284 @@ private fun ScanResultState(assessment: RiskAssessment) {
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrivacySettingsScreen(
+    currentProfile: PrivacyProfile,
+    onProfileSelected: (PrivacyProfile) -> Unit,
+    onBack: () -> Unit
+) {
+
+    val context = LocalContext.current
+
+    val repository =
+        remember {
+            PrivacySettingsRepository(
+                context.applicationContext
+            )
+        }
+
+    val appsProvider =
+        remember {
+            InstalledAppsProvider(
+                context.applicationContext
+            )
+        }
+
+    val installedApps =
+        remember {
+            appsProvider.getInstalledApps()
+        }
+
+    var selectedApps by remember {
+        mutableStateOf(
+            repository.getAdditionalApps()
+        )
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize()
+    ) { innerPadding ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(24.dp)
+                .verticalScroll(
+                    rememberScrollState()
+                )
+        ) {
+
+            Text(
+                text = "Privacy Settings",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            Text(
+                text = "Choose how TrustOS protects your privacy.",
+                fontSize = 16.sp,
+                color =
+                    MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(
+                modifier = Modifier.height(24.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
+
+                    Text(
+                        text = "Standard Privacy",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text =
+                            "TrustOS automatically protects predefined sensitive contexts such as galleries, banking, payments and password entry.",
+                        fontSize = 14.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(12.dp)
+                    )
+
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        androidx.compose.material3.RadioButton(
+                            selected =
+                                currentProfile ==
+                                        PrivacyProfile.STANDARD,
+                            onClick = {
+                                onProfileSelected(
+                                    PrivacyProfile.STANDARD
+                                )
+                            }
+                        )
+
+                        Text(
+                            text = "Use Standard Privacy",
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(
+                modifier = Modifier.height(16.dp)
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
+
+                    Text(
+                        text = "Enhanced Privacy",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+                    Text(
+                        text =
+                            "Keep all Standard protections and additionally protect apps that you personally select.",
+                        fontSize = 14.sp
+                    )
+
+                    Spacer(
+                        modifier = Modifier.height(12.dp)
+                    )
+
+                    androidx.compose.foundation.layout.Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        androidx.compose.material3.RadioButton(
+                            selected =
+                                currentProfile ==
+                                        PrivacyProfile.ENHANCED,
+                            onClick = {
+                                onProfileSelected(
+                                    PrivacyProfile.ENHANCED
+                                )
+                            }
+                        )
+
+                        Text(
+                            text = "Use Enhanced Privacy",
+                            fontSize = 16.sp
+                        )
+                    }
+
+                    if (
+                        currentProfile ==
+                        PrivacyProfile.ENHANCED
+                    ) {
+
+                        Spacer(
+                            modifier = Modifier.height(16.dp)
+                        )
+
+                        Text(
+                            text = "Choose additional protected apps",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                "Standard protections remain active. These apps receive additional privacy protection.",
+                            fontSize = 14.sp,
+                            color =
+                                MaterialTheme
+                                    .colorScheme
+                                    .onSurfaceVariant
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
+
+                        if (installedApps.isEmpty()) {
+
+                            Text(
+                                text = "No launchable apps found.",
+                                fontSize = 15.sp
+                            )
+
+                        } else {
+
+                            installedApps.forEach { app ->
+
+                                androidx.compose.foundation.layout.Row(
+                                    modifier =
+                                        Modifier.fillMaxWidth(),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically
+                                ) {
+
+                                    Checkbox(
+                                        checked =
+                                            selectedApps.contains(
+                                                app.packageName
+                                            ),
+                                        onCheckedChange = { checked ->
+
+                                            selectedApps =
+                                                if (checked) {
+                                                    selectedApps +
+                                                            app.packageName
+                                                } else {
+                                                    selectedApps -
+                                                            app.packageName
+                                                }
+
+                                            repository
+                                                .setAdditionalApps(
+                                                    selectedApps
+                                                )
+                                        }
+                                    )
+
+                                    Text(
+                                        text = app.appName,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(
+                modifier = Modifier.height(24.dp)
+            )
+
+            androidx.compose.material3.TextButton(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Back"
+                )
             }
         }
     }

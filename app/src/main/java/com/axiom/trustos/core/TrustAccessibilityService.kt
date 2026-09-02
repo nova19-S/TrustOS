@@ -25,111 +25,224 @@ class TrustAccessibilityService : AccessibilityService() {
     private lateinit var ocrEngine: OcrEngine
     private lateinit var screenCaptureHelper: ScreenCaptureHelper
 
-    private val secureAnalysisEngine =
-        SecureAnalysisEngine(
-            privacyController = PrivacyController(),
-            analysisEngine = AnalysisEngine(
-                urlRiskDetector = UrlRiskDetector(),
-                textRiskDetector = TextRiskDetector(),
-                trustEngine = TrustEngine()
-            )
-        )
+    private lateinit var secureAnalysisEngine: SecureAnalysisEngine
 
-    private val dismissedThreats = mutableSetOf<String>()
-    private var activeThreatKey: String? = null
     private var lastPackageName: String? = null
+    private var lastWindowId = -1
     private var lastAnalyzedKey: String? = null
+    private var activeThreatKey: String? = null
+
+    private val dismissedOnCurrentScreen = mutableSetOf<String>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
 
+        secureAnalysisEngine =
+            SecureAnalysisEngine(
+                privacyController = PrivacyController(this),
+                analysisEngine = AnalysisEngine(
+                    urlRiskDetector = UrlRiskDetector(),
+                    textRiskDetector = TextRiskDetector(),
+                    trustEngine = TrustEngine()
+                )
+            )
+
         warningOverlay = WarningOverlay(
             context = this,
             onIgnore = { threatKey ->
-                rememberDismissedThreat(threatKey)
-                activeThreatKey = threatKey
+                dismissCurrentThreat(threatKey)
             }
         )
 
         ocrEngine = OcrEngine()
         screenCaptureHelper = ScreenCaptureHelper(this)
 
-        loadDismissedThreats()
-
-        android.util.Log.d(TAG, "TrustOS Accessibility Service connected")
+        android.util.Log.d(TAG, "================================")
+        android.util.Log.d(TAG, "TrustOS Accessibility Service READY")
+        android.util.Log.d(TAG, "================================")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-
         if (event == null) return
 
         val packageName = event.packageName?.toString() ?: return
 
         if (packageName == this.packageName) return
 
-        if (lastPackageName != packageName) {
-            lastPackageName = packageName
-            lastAnalyzedKey = null
-            activeThreatKey = null
-        }
+        val windowChanged =
+            event.windowId != lastWindowId
 
-        val rootNode = rootInActiveWindow ?: return
+        val packageChanged =
+            packageName != lastPackageName
 
-        val visibleText = extractVisibleText(rootNode)
-
-        if (visibleText.isBlank()) return
-
-        val normalizedText = normalizeText(visibleText)
-        val analysisKey = "$packageName|$normalizedText"
-
-        if (analysisKey == lastAnalyzedKey) return
-
-        val detectedUrl = extractUrl(visibleText)
-
-        val appContext =
-            contextDetector.classifyPackage(packageName)
-
-        val result =
-            secureAnalysisEngine.analyze(
-                context = appContext,
-                text = visibleText,
-                url = detectedUrl
+        if (packageChanged || windowChanged) {
+            android.util.Log.d(
+                TAG,
+                "SCREEN CHANGE | package=$packageName window=${event.windowId}"
             )
 
-        if (result.privacyDecision.mode != PrivacyMode.SCAN) {
-            lastAnalyzedKey = analysisKey
+            lastPackageName = packageName
+            lastWindowId = event.windowId
+            lastAnalyzedKey = null
+            activeThreatKey = null
+            dismissedOnCurrentScreen.clear()
+
+            warningOverlay.hide()
+        }
+
+        val rootNode = rootInActiveWindow
+
+        if (rootNode == null) {
+            android.util.Log.d(
+                TAG,
+                "No root node available"
+            )
+            return
+        }
+
+        val visibleText =
+            extractVisibleText(rootNode)
+
+        if (visibleText.isBlank()) {
+            android.util.Log.d(
+                TAG,
+                "No visible text"
+            )
+            return
+        }
+
+        val normalizedText =
+            normalizeText(visibleText)
+
+        val analysisKey =
+            "$packageName|${event.windowId}|$normalizedText"
+
+        if (analysisKey == lastAnalyzedKey) {
             return
         }
 
         lastAnalyzedKey = analysisKey
 
-        val assessment = result.riskAssessment
+        val appContext =
+            contextDetector.classifyPackage(packageName)
+
+        val detectedUrl =
+            extractUrl(visibleText)
 
         android.util.Log.d(
             TAG,
-            "Risk: ${assessment?.score} Level: ${assessment?.level} Confidence: ${assessment?.confidence}"
+            "--------------------------------"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "SCREEN ANALYSIS"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Package: $packageName"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Window: ${event.windowId}"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Context: $appContext"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "URL: ${detectedUrl ?: "NONE"}"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Text: ${visibleText.take(300)}"
+        )
+
+        val result =
+            secureAnalysisEngine.analyze(
+                context = appContext,
+                packageName = packageName,
+                text = visibleText,
+                url = detectedUrl
+            )
+
+        android.util.Log.d(
+            TAG,
+            "Privacy Mode: ${result.privacyDecision.mode}"
         )
 
         if (
-            assessment != null &&
-            (
-                    assessment.level == RiskLevel.HIGH ||
-                            assessment.level == RiskLevel.CRITICAL
-                    )
+            result.privacyDecision.mode !=
+            PrivacyMode.SCAN
         ) {
-            handleThreat(
-                packageName,
-                visibleText,
-                detectedUrl,
-                assessment
+            android.util.Log.d(
+                TAG,
+                "SCAN PAUSED"
             )
-        }
-    }
 
-    override fun onInterrupt() {
+            return
+        }
+
         android.util.Log.d(
             TAG,
-            "TrustOS Accessibility Service interrupted"
+            "SCAN CONTINUING"
+        )
+
+        val assessment =
+            result.riskAssessment
+
+        if (assessment == null) {
+            android.util.Log.d(
+                TAG,
+                "No risk assessment"
+            )
+            return
+        }
+
+        android.util.Log.d(
+            TAG,
+            "Risk: ${assessment.score}"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Level: ${assessment.level}"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Confidence: ${assessment.confidence}"
+        )
+
+        android.util.Log.d(
+            TAG,
+            "Reasons: ${assessment.reasons}"
+        )
+
+        val dangerous =
+            assessment.level == RiskLevel.HIGH ||
+                    assessment.level == RiskLevel.CRITICAL
+
+        if (!dangerous) {
+            android.util.Log.d(
+                TAG,
+                "No warning required"
+            )
+
+            return
+        }
+
+        handleThreat(
+            packageName = packageName,
+            text = visibleText,
+            url = detectedUrl,
+            assessment = assessment
         )
     }
 
@@ -153,23 +266,36 @@ class TrustAccessibilityService : AccessibilityService() {
             "THREAT KEY: $threatKey"
         )
 
-        if (dismissedThreats.contains(threatKey)) {
+        if (
+            dismissedOnCurrentScreen.contains(
+                threatKey
+            )
+        ) {
             android.util.Log.d(
                 TAG,
-                "Threat dismissed"
+                "Threat suppressed on current screen"
             )
+
             return
         }
 
-        if (activeThreatKey == threatKey) {
+        if (
+            activeThreatKey == threatKey
+        ) {
             android.util.Log.d(
                 TAG,
-                "Same threat already handled"
+                "Same threat already active"
             )
+
             return
         }
 
         activeThreatKey = threatKey
+
+        android.util.Log.d(
+            TAG,
+            "SHOWING WARNING OVERLAY"
+        )
 
         warningOverlay.show(
             assessment = assessment,
@@ -177,42 +303,29 @@ class TrustAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun rememberDismissedThreat(
+    private fun dismissCurrentThreat(
         threatKey: String
     ) {
 
         if (threatKey.isBlank()) return
 
-        dismissedThreats.add(threatKey)
-
-        getSharedPreferences(
-            PREFS_NAME,
-            MODE_PRIVATE
+        dismissedOnCurrentScreen.add(
+            threatKey
         )
-            .edit()
-            .putStringSet(
-                DISMISSED_THREATS_KEY,
-                dismissedThreats.toSet()
-            )
-            .apply()
+
+        activeThreatKey = threatKey
+
+        android.util.Log.d(
+            TAG,
+            "Threat dismissed for current screen: $threatKey"
+        )
     }
 
-    private fun loadDismissedThreats() {
-
-        val saved =
-            getSharedPreferences(
-                PREFS_NAME,
-                MODE_PRIVATE
-            )
-                .getStringSet(
-                    DISMISSED_THREATS_KEY,
-                    emptySet()
-                )
-                ?.toSet()
-                ?: emptySet()
-
-        dismissedThreats.clear()
-        dismissedThreats.addAll(saved)
+    override fun onInterrupt() {
+        android.util.Log.d(
+            TAG,
+            "Accessibility Service interrupted"
+        )
     }
 
     private fun createThreatKey(
@@ -226,12 +339,16 @@ class TrustAccessibilityService : AccessibilityService() {
             return "$packageName|URL|${normalizeUrl(url)}"
         }
 
-        val normalized = normalizeText(text)
+        val normalized =
+            normalizeText(text)
 
         val evidence =
             SUSPICIOUS_PHRASES
                 .filter {
-                    containsPhrase(normalized, it)
+                    containsPhrase(
+                        normalized,
+                        it
+                    )
                 }
                 .distinct()
                 .sorted()
@@ -242,7 +359,9 @@ class TrustAccessibilityService : AccessibilityService() {
 
         val reasons =
             assessment.reasons
-                .map { it.lowercase().trim() }
+                .map {
+                    it.lowercase().trim()
+                }
                 .distinct()
                 .sorted()
 
@@ -263,24 +382,39 @@ class TrustAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun normalizeText(text: String): String {
+    private fun normalizeText(
+        text: String
+    ): String {
+
         return text
             .lowercase()
-            .replace(Regex("\\d{1,2}:\\d{2}"), "")
-            .replace(Regex("\\s+"), " ")
+            .replace(
+                Regex("\\d{1,2}:\\d{2}"),
+                ""
+            )
+            .replace(
+                Regex("\\s+"),
+                " "
+            )
             .trim()
     }
 
-    private fun normalizeUrl(url: String): String {
+    private fun normalizeUrl(
+        url: String
+    ): String {
+
         return url
             .lowercase()
             .trim()
             .removeSuffix("/")
     }
 
-    private fun extractUrl(text: String): String? {
+    private fun extractUrl(
+        text: String
+    ): String? {
 
-        val matcher = Patterns.WEB_URL.matcher(text)
+        val matcher =
+            Patterns.WEB_URL.matcher(text)
 
         return if (matcher.find()) {
             matcher.group()
@@ -295,11 +429,17 @@ class TrustAccessibilityService : AccessibilityService() {
 
         if (node == null) return ""
 
-        val builder = StringBuilder()
+        val builder =
+            StringBuilder()
 
-        collectText(node, builder)
+        collectText(
+            node,
+            builder
+        )
 
-        return builder.toString().trim()
+        return builder
+            .toString()
+            .trim()
     }
 
     private fun collectText(
@@ -309,32 +449,36 @@ class TrustAccessibilityService : AccessibilityService() {
 
         node.text?.toString()?.let {
             if (it.isNotBlank()) {
-                builder.append(it).append('\n')
+                builder
+                    .append(it)
+                    .append('\n')
             }
         }
 
-        node.contentDescription?.toString()?.let {
-            if (it.isNotBlank()) {
-                builder.append(it).append('\n')
+        node.contentDescription
+            ?.toString()
+            ?.let {
+                if (it.isNotBlank()) {
+                    builder
+                        .append(it)
+                        .append('\n')
+                }
             }
-        }
 
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let {
-                collectText(it, builder)
+                collectText(
+                    it,
+                    builder
+                )
             }
         }
     }
 
     companion object {
 
-        private const val TAG = "TrustOS"
-
-        private const val PREFS_NAME =
-            "trustos_preferences"
-
-        private const val DISMISSED_THREATS_KEY =
-            "dismissed_threats"
+        private const val TAG =
+            "TrustOS"
 
         private val SUSPICIOUS_PHRASES =
             listOf(
