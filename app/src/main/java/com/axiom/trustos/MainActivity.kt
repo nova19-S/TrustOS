@@ -157,7 +157,11 @@ fun TrustOSDashboard(
     onEnableOverlay: () -> Unit,
     onOpenPrivacySettings: () -> Unit
 ) {
-    val trustEngine = remember { TrustEngine() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val networkIntelRepository = remember {
+        com.axiom.trustos.core.intel.NetworkIntelRepository(context.applicationContext)
+    }
+    val trustEngine = remember { TrustEngine(networkIntelRepository = networkIntelRepository) }
     val urlRiskDetector = remember { UrlRiskDetector() }
 
     var urlInput by remember { mutableStateOf("") }
@@ -277,6 +281,30 @@ fun TrustOSDashboard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = "Privacy Settings")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    networkIntelRepository.simulateExternalReports(
+                        category = com.axiom.trustos.core.intel.ThreatCategory.SUSPICIOUS_URL,
+                        count = 3
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "[DEMO] Simulate 3 Network Reports")
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    networkIntelRepository.resetAll()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "[DEMO] Reset Network Data")
             }
 
             Spacer(modifier = Modifier.height(24.dp))

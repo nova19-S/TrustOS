@@ -30,6 +30,8 @@ class TrustAccessibilityService : AccessibilityService() {
     private lateinit var screenCaptureHelper: ScreenCaptureHelper
     private lateinit var secureAnalysisEngine: SecureAnalysisEngine
 
+    private lateinit var networkIntelRepository: com.axiom.trustos.core.intel.NetworkIntelRepository
+
     private lateinit var threatVaultRepository: ThreatVaultRepository
 
     private var pendingThreatRecord: ThreatRecord? = null
@@ -48,13 +50,18 @@ class TrustAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
 
+        networkIntelRepository =
+            com.axiom.trustos.core.intel.NetworkIntelRepository(this)
+
         secureAnalysisEngine =
             SecureAnalysisEngine(
                 privacyController = PrivacyController(this),
                 analysisEngine = AnalysisEngine(
                     urlRiskDetector = UrlRiskDetector(),
                     textRiskDetector = TextRiskDetector(),
-                    trustEngine = TrustEngine()
+                    trustEngine = TrustEngine(
+                        networkIntelRepository = networkIntelRepository
+                    )
                 )
             )
 
@@ -513,6 +520,16 @@ class TrustAccessibilityService : AccessibilityService() {
             )
 
         activeThreatKey = threatKey
+
+        val category =
+            com.axiom.trustos.core.intel.primaryCategoryForReasons(assessment.reasons)
+
+        networkIntelRepository.reportThreat(category)
+
+        android.util.Log.d(
+            TAG,
+            "REPORTED TO NETWORK: category=$category"
+        )
 
         android.util.Log.d(
             TAG,

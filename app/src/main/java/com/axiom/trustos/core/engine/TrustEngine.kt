@@ -1,10 +1,14 @@
 package com.axiom.trustos.core.engine
 
+import com.axiom.trustos.core.intel.NetworkIntelRepository
+import com.axiom.trustos.core.intel.primaryCategoryForReasons
 import com.axiom.trustos.core.model.DetectionResult
 import com.axiom.trustos.core.model.RiskAssessment
 import com.axiom.trustos.core.model.RiskLevel
 
-class TrustEngine {
+class TrustEngine(
+    private val networkIntelRepository: NetworkIntelRepository? = null
+) {
 
     fun assess(results: List<DetectionResult>): RiskAssessment {
 
@@ -29,9 +33,15 @@ class TrustEngine {
             result.riskContribution * result.confidence
         }
 
-        val score = weightedScore
+        val localScore = weightedScore
             .roundToInt()
             .coerceIn(0, 100)
+
+        val reasons = results
+            .map { it.reason }
+            .distinct()
+
+        val (finalScore, allReasons) = applyNetworkIntel(localScore, reasons)
 
         val confidence = results
             .map { it.confidence }
@@ -39,13 +49,53 @@ class TrustEngine {
             .coerceIn(0.0, 1.0)
 
         return RiskAssessment(
-            score = score,
+            score = finalScore,
             confidence = confidence,
-            level = riskLevelFor(score),
-            reasons = results
-                .map { it.reason }
-                .distinct()
+            level = riskLevelFor(finalScore),
+            reasons = allReasons
         )
+    }
+
+    /**
+     * Reports this finding's category to the network and checks whether
+     * that category is currently trending. If it is, boosts the score
+     * and adds a reason explaining why — so the "why flagged" UI is
+     * always honest about what contributed to the number.
+     *
+     * If no repository was provided (e.g. a quick local-only preview),
+     * this is a no-op and returns the local score unchanged.
+     */
+    private fun applyNetworkIntel(
+        localScore: Int,
+        reasons: List<String>
+    ): Pair<Int, List<String>> {
+
+        val repository = networkIntelRepository
+            ?: return localScore to reasons
+
+        val category = primaryCategoryForReasons(reasons)
+
+        val intel = repository.checkIntel(category)
+        android.util.Log.d(
+            "TrustOSIntel",
+            "category=$category reportCount=${intel.reportCount} isTrending=${intel.isTrending} trendBoost=${intel.trendBoost} localScore=$localScore"
+        )
+
+        if (!intel.isTrending) {
+            return localScore to reasons
+        }
+
+        val boostedScore = (localScore + intel.trendBoost).coerceIn(0, 100)
+
+        val updatedReasons = reasons +
+                "This type of threat is trending nearby (${intel.reportCount} recent reports)"
+
+        android.util.Log.d(
+            "TrustOSIntel",
+            "BOOSTED: localScore=$localScore + trendBoost=${intel.trendBoost} = finalScore=$boostedScore"
+        )
+
+        return boostedScore to updatedReasons
     }
 
     private fun riskLevelFor(score: Int): RiskLevel {
