@@ -18,7 +18,8 @@ import com.axiom.trustos.core.model.RiskLevel
 
 class WarningOverlay(
     private val context: Context,
-    private val onIgnore: (String) -> Unit
+    private val onIgnore: (String) -> Unit,
+    private val onBlockAndSave: (String) -> Unit,
 ) {
 
     private val windowManager =
@@ -210,6 +211,25 @@ class WarningOverlay(
                 setPadding(0, dp(18), 0, dp(18))
             }
 
+            val blockAndSaveButton = Button(context).apply {
+                text = "Block & Save"
+                setOnClickListener {
+
+                    val key = currentThreatKey
+
+                    android.util.Log.d(
+                        "TrustOSOverlay",
+                        "BLOCK & SAVE CLICKED FROM DETAILS: $key"
+                    )
+
+                    if (!key.isNullOrBlank()) {
+                        onBlockAndSave(key)
+                    }
+
+                    hide()
+                }
+            }
+
             val closeButton = Button(context).apply {
                 text = "Close"
                 setOnClickListener {
@@ -219,6 +239,7 @@ class WarningOverlay(
 
             container.addView(title)
             container.addView(explanation)
+            container.addView(blockAndSaveButton)
             container.addView(closeButton)
 
             removeCurrentOverlay()

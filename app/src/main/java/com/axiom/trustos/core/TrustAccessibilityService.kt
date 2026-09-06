@@ -1,5 +1,7 @@
 package com.axiom.trustos.core
 
+import com.axiom.trustos.core.threat.ThreatRecord
+import com.axiom.trustos.core.threat.ThreatVaultRepository
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.util.Patterns
@@ -20,6 +22,7 @@ import com.axiom.trustos.ui.WarningOverlay
 
 class TrustAccessibilityService : AccessibilityService() {
 
+    private val TAG = "TrustOS"
     private val contextDetector = ContextDetector()
 
     private lateinit var warningOverlay: WarningOverlay
@@ -27,11 +30,18 @@ class TrustAccessibilityService : AccessibilityService() {
     private lateinit var screenCaptureHelper: ScreenCaptureHelper
     private lateinit var secureAnalysisEngine: SecureAnalysisEngine
 
+    private lateinit var threatVaultRepository: ThreatVaultRepository
+
+    private var pendingThreatRecord: ThreatRecord? = null
+
     private var lastPackageName: String? = null
     private var lastWindowId = -1
     private var lastAnalyzedKey: String? = null
     private var activeThreatKey: String? = null
     private var ocrInProgressKey: String? = null
+
+    private var lastOcrCaptureTimeMs: Long = 0L
+    private val ocrMinIntervalMs = 2000L
 
     private val dismissedOnCurrentScreen = mutableSetOf<String>()
 
@@ -48,10 +58,33 @@ class TrustAccessibilityService : AccessibilityService() {
                 )
             )
 
+        threatVaultRepository = ThreatVaultRepository(this)
+
         warningOverlay = WarningOverlay(
             context = this,
+
             onIgnore = { threatKey ->
                 dismissCurrentThreat(threatKey)
+            },
+
+            onBlockAndSave = { threatKey ->
+
+                val record =
+                    pendingThreatRecord
+
+                if (
+                    record != null &&
+                    record.threatKey == threatKey
+                ) {
+                    threatVaultRepository.saveThreat(record)
+
+                    android.util.Log.d(
+                        TAG,
+                        "THREAT SAVED TO VAULT: $threatKey"
+                    )
+
+                    pendingThreatRecord = null
+                }
             }
         )
 
@@ -115,7 +148,11 @@ class TrustAccessibilityService : AccessibilityService() {
             captureAndAnalyzeWithOcr(
                 packageName = packageName,
                 windowId = event.windowId,
-                appContext = contextDetector.classifyPackage(packageName)
+                appContext = if (containsPasswordField(rootNode)) {
+                    com.axiom.trustos.core.privacy.AppContext.PASSWORD_ENTRY
+                } else {
+                    contextDetector.classifyPackage(packageName)
+                }
             )
 
             return
@@ -130,42 +167,25 @@ class TrustAccessibilityService : AccessibilityService() {
             captureAndAnalyzeWithOcr(
                 packageName = packageName,
                 windowId = event.windowId,
-                appContext = contextDetector.classifyPackage(packageName)
+                appContext = if (containsPasswordField(rootNode)) {
+                    com.axiom.trustos.core.privacy.AppContext.PASSWORD_ENTRY
+                } else {
+                    contextDetector.classifyPackage(packageName)
+                }
             )
 
             return
         }
 
-        val appContext =
+        val baseContext =
             contextDetector.classifyPackage(packageName)
 
-        val privacyDecision =
-            PrivacyController(this).evaluate(
-                context = appContext,
-                packageName = packageName
-            )
-
-        android.util.Log.d(
-            TAG,
-            "Privacy Mode: ${privacyDecision.mode}"
-        )
-
-        if (privacyDecision.mode != PrivacyMode.SCAN) {
-            android.util.Log.d(
-                TAG,
-                "SCAN PAUSED - OCR will not run"
-            )
-            return
-        }
-
-        if (visibleText.isBlank()) {
-            captureAndAnalyzeWithOcr(
-                packageName = packageName,
-                windowId = event.windowId,
-                appContext = appContext
-            )
-            return
-        }
+        val appContext =
+            if (containsPasswordField(rootNode)) {
+                com.axiom.trustos.core.privacy.AppContext.PASSWORD_ENTRY
+            } else {
+                baseContext
+            }
 
         analyzeText(
             packageName = packageName,
@@ -195,6 +215,19 @@ class TrustAccessibilityService : AccessibilityService() {
         if (lastAnalyzedKey == ocrKey) {
             return
         }
+
+        val now = System.currentTimeMillis()
+        val timeSinceLastCapture = now - lastOcrCaptureTimeMs
+
+        if (timeSinceLastCapture < ocrMinIntervalMs) {
+            android.util.Log.d(
+                TAG,
+                "OCR throttled — only ${timeSinceLastCapture}ms since last capture"
+            )
+            return
+        }
+
+        lastOcrCaptureTimeMs = now
 
         ocrInProgressKey = ocrKey
 
@@ -461,6 +494,24 @@ class TrustAccessibilityService : AccessibilityService() {
             return
         }
 
+        pendingThreatRecord =
+            ThreatRecord(
+                threatKey = threatKey,
+                packageName = packageName,
+                indicator = url?.let {
+                    normalizeUrl(it)
+                },
+                threatType = if (url != null) {
+                    "SUSPICIOUS_URL"
+                } else {
+                    "SUSPICIOUS_CONTENT"
+                },
+                riskScore = assessment.score,
+                confidence = assessment.confidence,
+                reasons = assessment.reasons,
+                createdAt = System.currentTimeMillis()
+            )
+
         activeThreatKey = threatKey
 
         android.util.Log.d(
@@ -473,6 +524,7 @@ class TrustAccessibilityService : AccessibilityService() {
             threatKey = threatKey
         )
     }
+
 
     private fun dismissCurrentThreat(
         threatKey: String
@@ -517,12 +569,9 @@ class TrustAccessibilityService : AccessibilityService() {
             normalizeText(text)
 
         val evidence =
-            SUSPICIOUS_PHRASES
+            com.axiom.trustos.core.detector.SuspiciousPhrases.ALL
                 .filter {
-                    containsPhrase(
-                        normalized,
-                        it
-                    )
+                    com.axiom.trustos.core.detector.SuspiciousPhrases.containsPhrase(normalized, it)
                 }
                 .distinct()
                 .sorted()
@@ -540,20 +589,6 @@ class TrustAccessibilityService : AccessibilityService() {
                 .sorted()
 
         return "$packageName|REASON|${reasons.joinToString("|")}"
-    }
-
-    private fun containsPhrase(
-        text: String,
-        phrase: String
-    ): Boolean {
-
-        return if (phrase.contains(" ")) {
-            text.contains(phrase)
-        } else {
-            Regex(
-                """\b${Regex.escape(phrase)}\b"""
-            ).containsMatchIn(text)
-        }
     }
 
     private fun normalizeText(
@@ -594,22 +629,29 @@ class TrustAccessibilityService : AccessibilityService() {
             return matcher.group()
         }
 
-        // OCR often inserts spaces around punctuation in URLs.
-        // Try to recover common shortened URLs from OCR text.
-        val ocrShortUrlPattern =
-            Regex(
-                """https?\s*:\s*/\s*/\s*bit\s*\.\s*ly\b""",
-                RegexOption.IGNORE_CASE
-            )
+        // OCR often inserts stray spaces around URL punctuation
+        // (e.g. "https : / / bit . ly / abc"). Collapse those specific
+        // gaps, then retry the standard URL matcher on the cleaned text.
+        val cleaned = cleanOcrUrlSpacing(text)
 
-        val ocrMatch =
-            ocrShortUrlPattern.find(text)
-
-        if (ocrMatch != null) {
-            return "http://bit.ly"
+        if (cleaned != text) {
+            val retryMatcher = Patterns.WEB_URL.matcher(cleaned)
+            if (retryMatcher.find()) {
+                return retryMatcher.group()
+            }
         }
 
         return null
+    }
+
+    private fun cleanOcrUrlSpacing(text: String): String {
+        return text
+            // "https : //" -> "https://"
+            .replace(Regex("""(https?)\s*:\s*/\s*/"""), "$1://")
+            // "bit . ly" -> "bit.ly", "example . com / path" -> "example.com/path"
+            .replace(Regex("""\s*\.\s*(?=[a-zA-Z]{2,})"""), ".")
+            // "domain.com / path" -> "domain.com/path"
+            .replace(Regex("""(?<=\w)\s+/\s*"""), "/")
     }
 
     private fun extractVisibleText(
@@ -629,6 +671,25 @@ class TrustAccessibilityService : AccessibilityService() {
         return builder
             .toString()
             .trim()
+    }
+
+    private fun containsPasswordField(
+        node: AccessibilityNodeInfo?
+    ): Boolean {
+
+        if (node == null) return false
+
+        if (node.isPassword) {
+            return true
+        }
+
+        for (i in 0 until node.childCount) {
+            if (containsPasswordField(node.getChild(i))) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun collectText(
@@ -665,89 +726,5 @@ class TrustAccessibilityService : AccessibilityService() {
     companion object {
 
         private const val TAG = "TrustOS"
-
-        private val SUSPICIOUS_PHRASES =
-            listOf(
-                "urgent",
-                "immediately",
-                "right now",
-                "act now",
-                "act immediately",
-                "respond immediately",
-                "last chance",
-                "final warning",
-                "expires today",
-                "account expires",
-                "within 24 hours",
-                "within 1 hour",
-                "within one hour",
-                "within 30 minutes",
-                "hurry",
-                "account will be blocked",
-                "account suspended",
-                "account locked",
-                "account will be closed",
-                "access will be revoked",
-                "verify your account",
-                "password",
-                "otp",
-                "one time password",
-                "pin",
-                "cvv",
-                "verification code",
-                "login credentials",
-                "share your otp",
-                "send your otp",
-                "enter your otp",
-                "provide your otp",
-                "share your pin",
-                "enter your pin",
-                "share your cvv",
-                "enter your cvv",
-                "make a payment",
-                "payment failed",
-                "payment pending",
-                "payment declined",
-                "payment required",
-                "confirm payment",
-                "verify payment",
-                "unauthorized transaction",
-                "suspicious transaction",
-                "transaction failed",
-                "transaction pending",
-                "refund pending",
-                "claim your refund",
-                "bank account",
-                "bank details",
-                "banking details",
-                "upi payment",
-                "upi transaction",
-                "upi id",
-                "card details",
-                "debit card",
-                "credit card",
-                "click here",
-                "click the link",
-                "verify now",
-                "update now",
-                "confirm now",
-                "tap here",
-                "login here",
-                "customer support",
-                "customer care",
-                "security team",
-                "security department",
-                "bank officer",
-                "bank representative",
-                "official support",
-                "account manager",
-                "kyc department",
-                "verification department",
-                "fraud department",
-                "rbi",
-                "reserve bank of india",
-                "income tax department",
-                "government official"
-            )
     }
 }

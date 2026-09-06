@@ -12,7 +12,7 @@ class TextRiskDetector {
 
         val findings = mutableListOf<DetectionResult>()
 
-        if (matchesAny(normalized, URGENCY_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.URGENCY)) {
             findings += finding(
                 reason = "Urgency language detected",
                 riskContribution = 15,
@@ -20,7 +20,7 @@ class TextRiskDetector {
             )
         }
 
-        if (matchesAny(normalized, ACCOUNT_THREAT_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.ACCOUNT_THREAT)) {
             findings += finding(
                 reason = "Account threat or suspension language detected",
                 riskContribution = 20,
@@ -28,7 +28,7 @@ class TextRiskDetector {
             )
         }
 
-        if (matchesAny(normalized, CREDENTIAL_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.CREDENTIAL)) {
             findings += finding(
                 reason = "Possible credential or authentication information request",
                 riskContribution = 25,
@@ -36,7 +36,7 @@ class TextRiskDetector {
             )
         }
 
-        if (matchesAny(normalized, FINANCIAL_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.FINANCIAL)) {
             findings += finding(
                 reason = "Financial or payment-related context detected",
                 riskContribution = 10,
@@ -44,7 +44,7 @@ class TextRiskDetector {
             )
         }
 
-        if (matchesAny(normalized, CALL_TO_ACTION_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.CALL_TO_ACTION)) {
             findings += finding(
                 reason = "Suspicious call-to-action detected",
                 riskContribution = 15,
@@ -52,7 +52,7 @@ class TextRiskDetector {
             )
         }
 
-        if (matchesAny(normalized, IMPERSONATION_PHRASES)) {
+        if (SuspiciousPhrases.matchesAny(normalized, SuspiciousPhrases.IMPERSONATION)) {
             findings += finding(
                 reason = "Possible authority or organization impersonation indicator",
                 riskContribution = 15,
@@ -76,120 +76,7 @@ class TextRiskDetector {
         )
     }
 
-    private fun matchesAny(text: String, phrases: List<String>): Boolean {
-        return phrases.any { phrase -> containsPhrase(text, phrase) }
-    }
-
-    private fun containsPhrase(text: String, phrase: String): Boolean {
-        return if (phrase.contains(' ')) {
-            text.contains(phrase)
-        } else {
-            Regex("""\b${Regex.escape(phrase)}\b""").containsMatchIn(text)
-        }
-    }
-
     companion object {
         private const val DETECTOR_NAME = "Text Detector"
-
-        private val URGENCY_PHRASES = listOf(
-            "urgent",
-            "immediately",
-            "right now",
-            "act now",
-            "act immediately",
-            "respond immediately",
-            "do this immediately",
-            "last chance",
-            "final warning",
-            "expires today",
-            "account expires",
-            "within 24 hours",
-            "within 1 hour",
-            "within one hour",
-            "within 30 minutes",
-            "hurry"
-        )
-
-        private val ACCOUNT_THREAT_PHRASES = listOf(
-            "account will be blocked",
-            "account suspended",
-            "account locked",
-            "account will be closed",
-            "access will be revoked",
-            "verify your account"
-        )
-
-        private val CREDENTIAL_PHRASES = listOf(
-            "password",
-            "otp",
-            "one time password",
-            "pin",
-            "cvv",
-            "verification code",
-            "login credentials",
-            "share your otp",
-            "send your otp",
-            "enter your otp",
-            "provide your otp",
-            "share your pin",
-            "enter your pin",
-            "share your cvv",
-            "enter your cvv",
-            "share the verification code",
-            "enter the verification code"
-        )
-
-        private val FINANCIAL_PHRASES = listOf(
-            "make a payment",
-            "payment failed",
-            "payment pending",
-            "payment declined",
-            "payment required",
-            "confirm payment",
-            "verify payment",
-            "unauthorized transaction",
-            "suspicious transaction",
-            "transaction failed",
-            "transaction pending",
-            "refund pending",
-            "claim your refund",
-            "bank account",
-            "bank details",
-            "banking details",
-            "upi payment",
-            "upi transaction",
-            "upi id",
-            "card details",
-            "debit card",
-            "credit card"
-        )
-
-        private val CALL_TO_ACTION_PHRASES = listOf(
-            "click here",
-            "click the link",
-            "verify now",
-            "update now",
-            "confirm now",
-            "tap here",
-            "login here"
-        )
-
-        private val IMPERSONATION_PHRASES = listOf(
-            "customer support",
-            "customer care",
-            "security team",
-            "security department",
-            "bank officer",
-            "bank representative",
-            "official support",
-            "account manager",
-            "kyc department",
-            "verification department",
-            "fraud department",
-            "rbi",
-            "reserve bank of india",
-            "income tax department",
-            "government official"
-        )
     }
 }
