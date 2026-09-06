@@ -90,6 +90,16 @@ class TrustAccessibilityService : AccessibilityService() {
                         "THREAT SAVED TO VAULT: $threatKey"
                     )
 
+                    val category =
+                        com.axiom.trustos.core.intel.primaryCategoryForReasons(record.reasons)
+
+                    networkIntelRepository.reportThreat(category)
+
+                    android.util.Log.d(
+                        TAG,
+                        "REPORTED TO NETWORK (user-confirmed): category=$category"
+                    )
+
                     pendingThreatRecord = null
                 }
             }
@@ -521,16 +531,6 @@ class TrustAccessibilityService : AccessibilityService() {
 
         activeThreatKey = threatKey
 
-        val category =
-            com.axiom.trustos.core.intel.primaryCategoryForReasons(assessment.reasons)
-
-        networkIntelRepository.reportThreat(category)
-
-        android.util.Log.d(
-            TAG,
-            "REPORTED TO NETWORK: category=$category"
-        )
-
         android.util.Log.d(
             TAG,
             "SHOWING WARNING OVERLAY"
@@ -639,26 +639,69 @@ class TrustAccessibilityService : AccessibilityService() {
         text: String
     ): String? {
 
-        val matcher =
-            Patterns.WEB_URL.matcher(text)
-
-        if (matcher.find()) {
-            return matcher.group()
-        }
-
-        // OCR often inserts stray spaces around URL punctuation
-        // (e.g. "https : / / bit . ly / abc"). Collapse those specific
-        // gaps, then retry the standard URL matcher on the cleaned text.
         val cleaned = cleanOcrUrlSpacing(text)
 
-        if (cleaned != text) {
-            val retryMatcher = Patterns.WEB_URL.matcher(cleaned)
-            if (retryMatcher.find()) {
-                return retryMatcher.group()
-            }
+        // Try the cleaned text first — this is where a garbled OCR URL
+        // like "http:  / / bit . ly / xyz" gets reconstructed properly.
+        val fromCleaned = bestUrlCandidate(cleaned)
+        if (fromCleaned != null) {
+            return fromCleaned
         }
 
-        return null
+        // Fall back to the raw text in case cleaning wasn't needed/helpful.
+        return bestUrlCandidate(text)
+    }
+
+    /**
+     * Finds every URL-shaped match in the text and returns the most
+     * plausible one, instead of blindly taking the first match.
+     *
+     * OCR text often contains accidental "word.Word" patterns from line
+     * wraps (e.g. "activity.\nBank Security" becomes "activity.Bank"),
+     * which look domain-shaped but aren't real URLs. We deprioritize
+     * those in favor of matches that have a real scheme (http/https) or
+     * look like a proper lowercase domain.
+     */
+    private fun bestUrlCandidate(text: String): String? {
+
+        val matcher = Patterns.WEB_URL.matcher(text)
+        val candidates = mutableListOf<String>()
+
+        while (matcher.find()) {
+            candidates.add(matcher.group())
+        }
+
+        if (candidates.isEmpty()) {
+            return null
+        }
+
+        return candidates
+            .filter { isPlausibleUrl(it) }
+            .maxByOrNull { it.length }
+            ?: candidates.maxByOrNull { it.length }
+    }
+
+    /**
+     * Rejects matches that are very likely OCR line-wrap accidents rather
+     * than real URLs: no scheme/www, AND an uppercase letter appears right
+     * after a dot (a strong signal of "sentence.Sentence" rather than a
+     * real domain, since real URLs are essentially always lowercase).
+     */
+    private fun isPlausibleUrl(candidate: String): Boolean {
+
+        val hasScheme =
+            candidate.startsWith("http://", ignoreCase = true) ||
+                    candidate.startsWith("https://", ignoreCase = true) ||
+                    candidate.startsWith("www.", ignoreCase = true)
+
+        if (hasScheme) {
+            return true
+        }
+
+        val hasUppercaseAfterDot =
+            Regex("""\.[A-Z]""").containsMatchIn(candidate)
+
+        return !hasUppercaseAfterDot
     }
 
     private fun cleanOcrUrlSpacing(text: String): String {
