@@ -296,6 +296,7 @@ fun TrustOSDashboard(
             ) {
                 Text(text = "[DEMO] Simulate 3 Network Reports")
             }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             Button(

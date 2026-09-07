@@ -10,9 +10,11 @@ import kotlin.math.roundToInt
  * In the real architecture, this is where a fingerprint would be checked
  * against a blockchain/shared network to see if the category is currently
  * trending. For the prototype, this is a local, self-contained stand-in:
- * every time a threat category is detected, we record a "report" for it,
- * with older reports decaying in influence over time. Categories with a lot
- * of recent reports are considered "trending" and get a score boost.
+ * every time a threat category is reported, we record it with a trust
+ * weight (so not every report counts equally — see ReporterTrustLevel),
+ * with older reports decaying in influence over time. Categories with a
+ * lot of recent, trustworthy reports are considered "trending" and get a
+ * score boost.
  *
  * This class is intentionally the ONLY place that knows this is fake —
  * everything that calls it (TrustEngine, etc.) just sees a normal
@@ -30,43 +32,26 @@ class NetworkIntelRepository(
         )
 
     /**
-     * Call this whenever a threat is detected locally, BEFORE checking
-     * trend status — this is the "report" step (equivalent to publishing
-     * a fingerprint to the network).
+     * Call this whenever a threat is detected and user-confirmed —
+     * this is the "report" step (equivalent to publishing a fingerprint
+     * to the network). The report's influence is scaled by how
+     * trustworthy the reporter is considered.
      */
-    fun reportThreat(category: ThreatCategory) {
+    fun reportThreat(
+        category: ThreatCategory,
+        trustLevel: ReporterTrustLevel = ReporterTrustLevel.ESTABLISHED
+    ) {
         val counts = loadCounts()
 
-        val existing = counts[category.name] ?: CategoryCount(0, System.currentTimeMillis())
-        val decayedCount = decayedValue(existing)
+        val existing = counts[category.name] ?: CategoryWeight(0.0, System.currentTimeMillis())
+        val decayedWeight = decayedValue(existing)
 
-        counts[category.name] = CategoryCount(
-            count = decayedCount + 1,
+        counts[category.name] = CategoryWeight(
+            weight = decayedWeight + trustLevel.weight,
             lastUpdatedMs = System.currentTimeMillis()
         )
 
         saveCounts(counts)
-    }
-
-    /**
-     * DEMO/TESTING ONLY. Clears all stored report counts so trending
-     * behavior can be demonstrated from a clean, predictable state.
-     */
-    fun resetAll() {
-        preferences.edit().clear().apply()
-    }
-
-    /**
-     * DEMO/TESTING ONLY. Simulates multiple independent devices reporting
-     * the same category, so trending behavior can be demonstrated without
-     * needing real separate devices. This is clearly separated from
-     * reportThreat() (the real single-report path) so it's obvious in
-     * code review that this is a stand-in, not production logic.
-     */
-    fun simulateExternalReports(category: ThreatCategory, count: Int) {
-        repeat(count) {
-            reportThreat(category)
-        }
     }
 
     /**
@@ -85,13 +70,16 @@ class NetworkIntelRepository(
             )
         }
 
-        val currentCount = decayedValue(existing)
+        val currentWeight = decayedValue(existing)
 
-        val isTrending = currentCount >= TRENDING_THRESHOLD
+        val isTrending = currentWeight >= TRENDING_THRESHOLD
 
         val trendBoost = if (isTrending) {
-            // More reports = more boost, capped so it can't dominate the score.
-            (currentCount * BOOST_PER_REPORT).coerceAtMost(MAX_TREND_BOOST)
+            // More weighted reports = more boost, capped so it can't
+            // dominate the score.
+            (currentWeight * BOOST_PER_REPORT)
+                .roundToInt()
+                .coerceAtMost(MAX_TREND_BOOST)
         } else {
             0
         }
@@ -99,8 +87,36 @@ class NetworkIntelRepository(
         return NetworkIntelResult(
             isTrending = isTrending,
             trendBoost = trendBoost,
-            reportCount = currentCount
+            // Shown in the UI for transparency — rounded to a whole
+            // number since "2.7 reports" would be a confusing thing
+            // to show a user.
+            reportCount = currentWeight.roundToInt()
         )
+    }
+
+    /**
+     * DEMO/TESTING ONLY. Simulates multiple independent devices reporting
+     * the same category, so trending behavior can be demonstrated without
+     * needing real separate devices. This is clearly separated from
+     * reportThreat() (the real single-report path) so it's obvious in
+     * code review that this is a stand-in, not production logic.
+     */
+    fun simulateExternalReports(
+        category: ThreatCategory,
+        count: Int,
+        trustLevel: ReporterTrustLevel = ReporterTrustLevel.ESTABLISHED
+    ) {
+        repeat(count) {
+            reportThreat(category, trustLevel)
+        }
+    }
+
+    /**
+     * DEMO/TESTING ONLY. Clears all stored report weights so trending
+     * behavior can be demonstrated from a clean, predictable state.
+     */
+    fun resetAll() {
+        preferences.edit().clear().apply()
     }
 
     /**
@@ -108,29 +124,28 @@ class NetworkIntelRepository(
      * was last reported, so old spikes fade out instead of accumulating
      * forever.
      */
-    private fun decayedValue(entry: CategoryCount): Int {
+    private fun decayedValue(entry: CategoryWeight): Double {
         val elapsedMs = System.currentTimeMillis() - entry.lastUpdatedMs
         val elapsedHalfLives = elapsedMs.toDouble() / DECAY_HALF_LIFE_MS
 
         if (elapsedHalfLives <= 0.0) {
-            return entry.count
+            return entry.weight
         }
 
-        val decayed = entry.count * Math.pow(0.5, elapsedHalfLives)
-        return decayed.roundToInt()
+        return entry.weight * Math.pow(0.5, elapsedHalfLives)
     }
 
-    private fun loadCounts(): MutableMap<String, CategoryCount> {
+    private fun loadCounts(): MutableMap<String, CategoryWeight> {
         val raw = preferences.getString(COUNTS_KEY, null) ?: return mutableMapOf()
 
         return try {
             val json = JSONObject(raw)
-            val result = mutableMapOf<String, CategoryCount>()
+            val result = mutableMapOf<String, CategoryWeight>()
 
             json.keys().forEach { key ->
                 val entry = json.getJSONObject(key)
-                result[key] = CategoryCount(
-                    count = entry.getInt("count"),
+                result[key] = CategoryWeight(
+                    weight = entry.getDouble("weight"),
                     lastUpdatedMs = entry.getLong("lastUpdatedMs")
                 )
             }
@@ -141,12 +156,12 @@ class NetworkIntelRepository(
         }
     }
 
-    private fun saveCounts(counts: Map<String, CategoryCount>) {
+    private fun saveCounts(counts: Map<String, CategoryWeight>) {
         val json = JSONObject()
 
         counts.forEach { (key, value) ->
             val entry = JSONObject()
-            entry.put("count", value.count)
+            entry.put("weight", value.weight)
             entry.put("lastUpdatedMs", value.lastUpdatedMs)
             json.put(key, entry)
         }
@@ -156,8 +171,8 @@ class NetworkIntelRepository(
             .apply()
     }
 
-    private data class CategoryCount(
-        val count: Int,
+    private data class CategoryWeight(
+        val weight: Double,
         val lastUpdatedMs: Long
     )
 
@@ -165,10 +180,10 @@ class NetworkIntelRepository(
         private const val PREFS_NAME = "trustos_network_intel"
         private const val COUNTS_KEY = "category_counts"
 
-        // How many recent reports (after decay) count as "trending".
-        private const val TRENDING_THRESHOLD = 3
+        // How much decayed weight counts as "trending".
+        private const val TRENDING_THRESHOLD = 3.0
 
-        // Points added to risk score per decayed report, once trending.
+        // Points added to risk score per unit of decayed weight, once trending.
         private const val BOOST_PER_REPORT = 4
 
         // Hard ceiling so network trend can never dominate the local score.

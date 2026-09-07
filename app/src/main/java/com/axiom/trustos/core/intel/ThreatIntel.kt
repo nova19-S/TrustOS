@@ -81,3 +81,15 @@ fun primaryCategoryForReasons(reasons: List<String>): ThreatCategory {
 
     return priorityOrder.first { it in categories }
 }
+
+/**
+ * How much weight a single report carries, based on how trustworthy the
+ * reporting device/account is considered. This is what prevents a burst
+ * of fake/new accounts from instantly manufacturing a fake trend — new
+ * or unverified reporters count for less until they build reputation.
+ */
+enum class ReporterTrustLevel(val weight: Double) {
+    NEW(0.3),
+    ESTABLISHED(1.0),
+    HIGHLY_TRUSTED(1.5)
+}
