@@ -1,5 +1,6 @@
 package com.axiom.trustos
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Checkbox
 import androidx.compose.ui.platform.LocalContext
 import com.axiom.trustos.core.privacy.InstalledAppsProvider
@@ -161,11 +162,15 @@ fun TrustOSDashboard(
     val networkIntelRepository = remember {
         com.axiom.trustos.core.intel.NetworkIntelRepository(context.applicationContext)
     }
+    val threatVaultRepository = remember {
+        com.axiom.trustos.core.threat.ThreatVaultRepository(context.applicationContext)
+    }
     val trustEngine = remember { TrustEngine(networkIntelRepository = networkIntelRepository) }
     val urlRiskDetector = remember { UrlRiskDetector() }
 
     var urlInput by remember { mutableStateOf("") }
     var scanState by remember { mutableStateOf<UrlScanUiState>(UrlScanUiState.Idle) }
+    var showDemoControls by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize()
@@ -190,7 +195,11 @@ fun TrustOSDashboard(
             Text(
                 text = "TrustOS",
                 fontSize = 30.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = { showDemoControls = !showDemoControls }
+                )
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -283,29 +292,19 @@ fun TrustOSDashboard(
                 Text(text = "Privacy Settings")
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (showDemoControls) {
 
-            Button(
-                onClick = {
-                    networkIntelRepository.simulateExternalReports(
-                        category = com.axiom.trustos.core.intel.ThreatCategory.SUSPICIOUS_URL,
-                        count = 3
-                    )
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "[DEMO] Simulate 3 Network Reports")
-            }
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
-                onClick = {
-                    networkIntelRepository.resetAll()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "[DEMO] Reset Network Data")
+                Button(
+                    onClick = {
+                        networkIntelRepository.resetAll()
+                        threatVaultRepository.clearAll()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "[DEMO] Reset Network Data")
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -376,6 +375,38 @@ private fun ScanResultState(assessment: RiskAssessment) {
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
+
+            if (assessment.isTrending) {
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFFFFF3E0)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "🌐 Network Alert",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = androidx.compose.ui.graphics.Color(0xFFE65100)
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "This threat category is trending across TrustOS users " +
+                                    "(${assessment.trendReportCount} recent verified reports). " +
+                                    "Score boosted based on decentralized threat intelligence.",
+                            fontSize = 14.sp,
+                            color = androidx.compose.ui.graphics.Color(0xFFE65100)
+                        )
+                    }
+                }
+            }
         }
     }
 

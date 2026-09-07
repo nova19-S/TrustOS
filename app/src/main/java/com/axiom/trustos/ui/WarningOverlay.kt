@@ -33,7 +33,8 @@ class WarningOverlay(
 
     fun show(
         assessment: RiskAssessment,
-        threatKey: String
+        threatKey: String,
+        alreadySaved: Boolean = false
     ) {
         mainHandler.post {
 
@@ -111,7 +112,7 @@ class WarningOverlay(
             val detailsButton = Button(context).apply {
                 text = "View Details"
                 setOnClickListener {
-                    showDetails(assessment)
+                    showDetails(assessment, alreadySaved)
                 }
             }
 
@@ -147,7 +148,8 @@ class WarningOverlay(
     }
 
     private fun showDetails(
-        assessment: RiskAssessment
+        assessment: RiskAssessment,
+        alreadySaved: Boolean
     ) {
         mainHandler.post {
 
@@ -204,30 +206,19 @@ class WarningOverlay(
                             append("⚠ $reason\n")
                         }
                     }
+
+                    if (assessment.isTrending) {
+                        append(
+                            "\n🌐 NETWORK ALERT: This threat type is trending " +
+                                    "across TrustOS users (${assessment.trendReportCount} " +
+                                    "recent verified reports).\n"
+                        )
+                    }
                 }
 
                 textSize = 16f
                 setTextColor(Color.DKGRAY)
                 setPadding(0, dp(18), 0, dp(18))
-            }
-
-            val blockAndSaveButton = Button(context).apply {
-                text = "Block & Save"
-                setOnClickListener {
-
-                    val key = currentThreatKey
-
-                    android.util.Log.d(
-                        "TrustOSOverlay",
-                        "BLOCK & SAVE CLICKED FROM DETAILS: $key"
-                    )
-
-                    if (!key.isNullOrBlank()) {
-                        onBlockAndSave(key)
-                    }
-
-                    hide()
-                }
             }
 
             val closeButton = Button(context).apply {
@@ -239,7 +230,42 @@ class WarningOverlay(
 
             container.addView(title)
             container.addView(explanation)
-            container.addView(blockAndSaveButton)
+
+            if (alreadySaved) {
+
+                val alreadyReportedNote = TextView(context).apply {
+                    text = "✔ Already reported to TrustOS network"
+                    textSize = 14f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, dp(4), 0, dp(14))
+                }
+
+                container.addView(alreadyReportedNote)
+
+            } else {
+
+                val blockAndSaveButton = Button(context).apply {
+                    text = "Block & Save"
+                    setOnClickListener {
+
+                        val key = currentThreatKey
+
+                        android.util.Log.d(
+                            "TrustOSOverlay",
+                            "BLOCK & SAVE CLICKED FROM DETAILS: $key"
+                        )
+
+                        if (!key.isNullOrBlank()) {
+                            onBlockAndSave(key)
+                        }
+
+                        hide()
+                    }
+                }
+
+                container.addView(blockAndSaveButton)
+            }
+
             container.addView(closeButton)
 
             removeCurrentOverlay()

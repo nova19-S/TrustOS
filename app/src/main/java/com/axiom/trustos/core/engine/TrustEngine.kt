@@ -41,7 +41,7 @@ class TrustEngine(
             .map { it.reason }
             .distinct()
 
-        val (finalScore, allReasons) = applyNetworkIntel(localScore, reasons)
+        val intelOutcome = applyNetworkIntel(localScore, reasons)
 
         val confidence = results
             .map { it.confidence }
@@ -49,10 +49,12 @@ class TrustEngine(
             .coerceIn(0.0, 1.0)
 
         return RiskAssessment(
-            score = finalScore,
+            score = intelOutcome.finalScore,
             confidence = confidence,
-            level = riskLevelFor(finalScore),
-            reasons = allReasons
+            level = riskLevelFor(intelOutcome.finalScore),
+            reasons = intelOutcome.reasons,
+            isTrending = intelOutcome.isTrending,
+            trendReportCount = intelOutcome.reportCount
         )
     }
 
@@ -65,37 +67,47 @@ class TrustEngine(
      * If no repository was provided (e.g. a quick local-only preview),
      * this is a no-op and returns the local score unchanged.
      */
+    private data class IntelOutcome(
+        val finalScore: Int,
+        val reasons: List<String>,
+        val isTrending: Boolean,
+        val reportCount: Int
+    )
+
     private fun applyNetworkIntel(
         localScore: Int,
         reasons: List<String>
-    ): Pair<Int, List<String>> {
+    ): IntelOutcome {
 
         val repository = networkIntelRepository
-            ?: return localScore to reasons
+            ?: return IntelOutcome(localScore, reasons, isTrending = false, reportCount = 0)
 
         val category = primaryCategoryForReasons(reasons)
 
         val intel = repository.checkIntel(category)
+
         android.util.Log.d(
             "TrustOSIntel",
             "category=$category reportCount=${intel.reportCount} isTrending=${intel.isTrending} trendBoost=${intel.trendBoost} localScore=$localScore"
         )
 
         if (!intel.isTrending) {
-            return localScore to reasons
+            return IntelOutcome(localScore, reasons, isTrending = false, reportCount = intel.reportCount)
         }
 
         val boostedScore = (localScore + intel.trendBoost).coerceIn(0, 100)
-
-        val updatedReasons = reasons +
-                "This type of threat is trending nearby (${intel.reportCount} recent reports)"
 
         android.util.Log.d(
             "TrustOSIntel",
             "BOOSTED: localScore=$localScore + trendBoost=${intel.trendBoost} = finalScore=$boostedScore"
         )
 
-        return boostedScore to updatedReasons
+        return IntelOutcome(
+            finalScore = boostedScore,
+            reasons = reasons,
+            isTrending = true,
+            reportCount = intel.reportCount
+        )
     }
 
     private fun riskLevelFor(score: Int): RiskLevel {

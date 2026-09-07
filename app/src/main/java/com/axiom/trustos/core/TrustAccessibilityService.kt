@@ -83,6 +83,10 @@ class TrustAccessibilityService : AccessibilityService() {
                     record != null &&
                     record.threatKey == threatKey
                 ) {
+
+                    val alreadyReportedBefore =
+                        threatVaultRepository.containsThreat(threatKey)
+
                     threatVaultRepository.saveThreat(record)
 
                     android.util.Log.d(
@@ -90,15 +94,25 @@ class TrustAccessibilityService : AccessibilityService() {
                         "THREAT SAVED TO VAULT: $threatKey"
                     )
 
-                    val category =
-                        com.axiom.trustos.core.intel.primaryCategoryForReasons(record.reasons)
+                    if (!alreadyReportedBefore) {
 
-                    networkIntelRepository.reportThreat(category)
+                        val category =
+                            com.axiom.trustos.core.intel.primaryCategoryForReasons(record.reasons)
 
-                    android.util.Log.d(
-                        TAG,
-                        "REPORTED TO NETWORK (user-confirmed): category=$category"
-                    )
+                        networkIntelRepository.reportThreat(category)
+
+                        android.util.Log.d(
+                            TAG,
+                            "REPORTED TO NETWORK (user-confirmed, new): category=$category"
+                        )
+
+                    } else {
+
+                        android.util.Log.d(
+                            TAG,
+                            "SKIPPED NETWORK REPORT — already reported this exact threat previously: $threatKey"
+                        )
+                    }
 
                     pendingThreatRecord = null
                 }
@@ -531,14 +545,18 @@ class TrustAccessibilityService : AccessibilityService() {
 
         activeThreatKey = threatKey
 
+        val alreadySaved =
+            threatVaultRepository.containsThreat(threatKey)
+
         android.util.Log.d(
             TAG,
-            "SHOWING WARNING OVERLAY"
+            "SHOWING WARNING OVERLAY (alreadySaved=$alreadySaved)"
         )
 
         warningOverlay.show(
             assessment = assessment,
-            threatKey = threatKey
+            threatKey = threatKey,
+            alreadySaved = alreadySaved
         )
     }
 

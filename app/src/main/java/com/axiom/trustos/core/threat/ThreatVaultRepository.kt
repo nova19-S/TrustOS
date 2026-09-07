@@ -150,5 +150,13 @@ class ThreatVaultRepository(
         private const val THREATS_KEY =
             "stored_threats"
     }
+
+    /**
+     * DEMO/TESTING ONLY. Clears all saved threats so the "already
+     * reported" state can be reset alongside network data for testing.
+     */
+    fun clearAll() {
+        preferences.edit().clear().apply()
+    }
 }
 

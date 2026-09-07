@@ -189,7 +189,8 @@ class NetworkIntelRepository(
         // Hard ceiling so network trend can never dominate the local score.
         private const val MAX_TREND_BOOST = 20
 
-        // Reports lose half their weight every 6 hours.
-        private const val DECAY_HALF_LIFE_MS = 6 * 60 * 60 * 1000L
+        // Reports lose half their weight every 72 hours (3 days),
+        // matched to typical multi-day scam campaign duration.
+        private const val DECAY_HALF_LIFE_MS = 72 * 60 * 60 * 1000L
     }
 }
