@@ -662,40 +662,59 @@ private fun PrivacySettingsScreen(
 
                             installedApps.forEach { app ->
 
-                                androidx.compose.foundation.layout.Row(
-                                    modifier =
-                                        Modifier.fillMaxWidth(),
-                                    verticalAlignment =
-                                        Alignment.CenterVertically
+                                Column(
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
 
-                                    Checkbox(
-                                        checked =
-                                            selectedApps.contains(
-                                                app.packageName
-                                            ),
-                                        onCheckedChange = { checked ->
+                                    androidx.compose.foundation.layout.Row(
+                                        modifier =
+                                            Modifier.fillMaxWidth(),
+                                        verticalAlignment =
+                                            Alignment.CenterVertically
+                                    ) {
 
-                                            selectedApps =
-                                                if (checked) {
-                                                    selectedApps +
-                                                            app.packageName
-                                                } else {
-                                                    selectedApps -
-                                                            app.packageName
-                                                }
+                                        Checkbox(
+                                            checked =
+                                                selectedApps.contains(
+                                                    app.packageName
+                                                ),
+                                            onCheckedChange = { checked ->
 
-                                            repository
-                                                .setAdditionalApps(
-                                                    selectedApps
-                                                )
-                                        }
-                                    )
+                                                selectedApps =
+                                                    if (checked) {
+                                                        selectedApps +
+                                                                app.packageName
+                                                    } else {
+                                                        selectedApps -
+                                                                app.packageName
+                                                    }
 
-                                    Text(
-                                        text = app.appName,
-                                        fontSize = 16.sp
-                                    )
+                                                repository
+                                                    .setAdditionalApps(
+                                                        selectedApps
+                                                    )
+                                            }
+                                        )
+
+                                        Text(
+                                            text = app.appName,
+                                            fontSize = 16.sp
+                                        )
+                                    }
+
+                                    if (app.permissionRisk.isNotable) {
+
+                                        Text(
+                                            text = "⚠ Notable permissions: " +
+                                                    app.permissionRisk.findings.joinToString("; "),
+                                            fontSize = 12.sp,
+                                            color = androidx.compose.ui.graphics.Color(0xFFE65100),
+                                            modifier = Modifier.padding(
+                                                start = 48.dp,
+                                                bottom = 8.dp
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }

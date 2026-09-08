@@ -10,6 +10,8 @@ class InstalledAppsProvider(
     private val packageManager =
         context.packageManager
 
+    private val permissionRiskAnalyzer = PermissionRiskAnalyzer(context)
+
     fun getInstalledApps(): List<PrivacyApp> {
 
         val intent = Intent(
@@ -26,12 +28,15 @@ class InstalledAppsProvider(
                 0
             )
             .map {
+                val packageName = it.activityInfo.packageName
+
                 PrivacyApp(
-                    packageName =
-                        it.activityInfo.packageName,
+                    packageName = packageName,
                     appName =
                         it.loadLabel(packageManager)
-                            .toString()
+                            .toString(),
+                    permissionRisk =
+                        permissionRiskAnalyzer.analyze(packageName)
                 )
             }
             .distinctBy {
