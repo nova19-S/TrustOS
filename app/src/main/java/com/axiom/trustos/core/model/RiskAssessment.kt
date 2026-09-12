@@ -1,5 +1,7 @@
 package com.axiom.trustos.core.model
 
+import com.axiom.trustos.core.intel.ThreatCategory
+
 /**
  * Combined TrustOS risk assessment.
  *
@@ -16,5 +18,6 @@ data class RiskAssessment(
     val level: RiskLevel,
     val reasons: List<String>,
     val isTrending: Boolean = false,
-    val trendReportCount: Int = 0
+    val trendReportCount: Int = 0,
+    val category: String = "GENERIC_SUSPICIOUS"
 )

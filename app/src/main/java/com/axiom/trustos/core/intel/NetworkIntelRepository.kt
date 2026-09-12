@@ -120,6 +120,28 @@ class NetworkIntelRepository(
     }
 
     /**
+     * Records the most recently detected threat category, regardless of
+     * source — a real on-screen detection (via TrustAccessibilityService)
+     * or a manual scan (via the dashboard). This lets demo tooling always
+     * target whatever was actually just seen, instead of only tracking
+     * manual dashboard activity.
+     */
+    fun recordLastSeenCategory(category: ThreatCategory) {
+        preferences.edit()
+            .putString(LAST_SEEN_CATEGORY_KEY, category.name)
+            .apply()
+    }
+
+    fun getLastSeenCategory(): ThreatCategory? {
+        val stored = preferences.getString(LAST_SEEN_CATEGORY_KEY, null) ?: return null
+        return try {
+            ThreatCategory.valueOf(stored)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Applies exponential-ish decay based on how long ago the category
      * was last reported, so old spikes fade out instead of accumulating
      * forever.
@@ -179,6 +201,7 @@ class NetworkIntelRepository(
     companion object {
         private const val PREFS_NAME = "trustos_network_intel"
         private const val COUNTS_KEY = "category_counts"
+        private const val LAST_SEEN_CATEGORY_KEY = "last_seen_category"
 
         // How much decayed weight counts as "trending".
         private const val TRENDING_THRESHOLD = 3.0

@@ -1,6 +1,7 @@
 package com.axiom.trustos.core.engine
 
 import com.axiom.trustos.core.intel.NetworkIntelRepository
+import com.axiom.trustos.core.intel.ThreatCategory
 import com.axiom.trustos.core.intel.primaryCategoryForReasons
 import com.axiom.trustos.core.model.DetectionResult
 import com.axiom.trustos.core.model.RiskAssessment
@@ -21,14 +22,6 @@ class TrustEngine(
             )
         }
 
-        /*
-         * Each finding contributes according to:
-         *
-         * risk contribution × confidence
-         *
-         * This prevents a low-confidence finding from having
-         * the same influence as a highly reliable finding.
-         */
         val weightedScore = results.sumOf { result ->
             result.riskContribution * result.confidence
         }
@@ -41,7 +34,15 @@ class TrustEngine(
             .map { it.reason }
             .distinct()
 
-        val intelOutcome = applyNetworkIntel(localScore, reasons)
+        val category = primaryCategoryForReasons(reasons)
+
+        // Record this as "last seen" regardless of trending status, so
+        // demo tooling and the dashboard always know the most recent
+        // detection's category, from ANY source (real screen detection
+        // or manual scan).
+        networkIntelRepository?.recordLastSeenCategory(category)
+
+        val intelOutcome = applyNetworkIntel(localScore, reasons, category)
 
         val confidence = results
             .map { it.confidence }
@@ -54,19 +55,11 @@ class TrustEngine(
             level = riskLevelFor(intelOutcome.finalScore),
             reasons = intelOutcome.reasons,
             isTrending = intelOutcome.isTrending,
-            trendReportCount = intelOutcome.reportCount
+            trendReportCount = intelOutcome.reportCount,
+            category = category.name
         )
     }
 
-    /**
-     * Reports this finding's category to the network and checks whether
-     * that category is currently trending. If it is, boosts the score
-     * and adds a reason explaining why — so the "why flagged" UI is
-     * always honest about what contributed to the number.
-     *
-     * If no repository was provided (e.g. a quick local-only preview),
-     * this is a no-op and returns the local score unchanged.
-     */
     private data class IntelOutcome(
         val finalScore: Int,
         val reasons: List<String>,
@@ -76,13 +69,12 @@ class TrustEngine(
 
     private fun applyNetworkIntel(
         localScore: Int,
-        reasons: List<String>
+        reasons: List<String>,
+        category: ThreatCategory
     ): IntelOutcome {
 
         val repository = networkIntelRepository
             ?: return IntelOutcome(localScore, reasons, isTrending = false, reportCount = 0)
-
-        val category = primaryCategoryForReasons(reasons)
 
         val intel = repository.checkIntel(category)
 

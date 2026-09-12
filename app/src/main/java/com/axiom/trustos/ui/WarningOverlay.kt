@@ -34,7 +34,8 @@ class WarningOverlay(
     fun show(
         assessment: RiskAssessment,
         threatKey: String,
-        alreadySaved: Boolean = false
+        alreadySaved: Boolean = false,
+        similarReportCount: Int = 0
     ) {
         mainHandler.post {
 
@@ -112,7 +113,7 @@ class WarningOverlay(
             val detailsButton = Button(context).apply {
                 text = "View Details"
                 setOnClickListener {
-                    showDetails(assessment, alreadySaved)
+                    showDetails(assessment, alreadySaved, similarReportCount)
                 }
             }
 
@@ -149,7 +150,8 @@ class WarningOverlay(
 
     private fun showDetails(
         assessment: RiskAssessment,
-        alreadySaved: Boolean
+        alreadySaved: Boolean,
+        similarReportCount: Int
     ) {
         mainHandler.post {
 
@@ -234,7 +236,8 @@ class WarningOverlay(
             if (alreadySaved) {
 
                 val alreadyReportedNote = TextView(context).apply {
-                    text = "✔ Already reported to TrustOS network"
+                    text = "✔ Already reported to TrustOS network\n" +
+                            "🌐 $similarReportCount similar reports from TrustOS users recently"
                     textSize = 14f
                     setTextColor(Color.DKGRAY)
                     setPadding(0, dp(4), 0, dp(14))

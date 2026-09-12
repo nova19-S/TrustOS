@@ -296,6 +296,45 @@ fun TrustOSDashboard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                val lastSeenCategory = remember(protectionEnabled) {
+                    networkIntelRepository.getLastSeenCategory()
+                }
+
+                Button(
+                    onClick = {
+                        val category =
+                            lastSeenCategory
+                                ?: com.axiom.trustos.core.intel.ThreatCategory.GENERIC_SUSPICIOUS
+
+                        networkIntelRepository.simulateExternalReports(
+                            category = category,
+                            count = 3
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (lastSeenCategory != null) {
+                            "[DEMO] Simulate 3 Reports for Last Detected Threat"
+                        } else {
+                            "[DEMO] Simulate 3 Reports (no threat detected yet)"
+                        }
+                    )
+                }
+
+                if (lastSeenCategory != null) {
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Will target: ${lastSeenCategory.name}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Button(
                     onClick = {
                         networkIntelRepository.resetAll()

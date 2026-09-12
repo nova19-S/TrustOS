@@ -548,15 +548,22 @@ class TrustAccessibilityService : AccessibilityService() {
         val alreadySaved =
             threatVaultRepository.containsThreat(threatKey)
 
+        val category =
+            com.axiom.trustos.core.intel.primaryCategoryForReasons(assessment.reasons)
+
+        val currentIntel =
+            networkIntelRepository.checkIntel(category)
+
         android.util.Log.d(
             TAG,
-            "SHOWING WARNING OVERLAY (alreadySaved=$alreadySaved)"
+            "SHOWING WARNING OVERLAY (alreadySaved=$alreadySaved, reportCount=${currentIntel.reportCount})"
         )
 
         warningOverlay.show(
             assessment = assessment,
             threatKey = threatKey,
-            alreadySaved = alreadySaved
+            alreadySaved = alreadySaved,
+            similarReportCount = currentIntel.reportCount
         )
     }
 
