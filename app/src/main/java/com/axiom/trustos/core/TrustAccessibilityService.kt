@@ -8,6 +8,7 @@ import android.util.Patterns
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.axiom.trustos.core.context.ContextDetector
+import com.axiom.trustos.core.detector.NlpRiskDetector
 import com.axiom.trustos.core.detector.TextRiskDetector
 import com.axiom.trustos.core.detector.UrlRiskDetector
 import com.axiom.trustos.core.engine.AnalysisEngine
@@ -29,6 +30,8 @@ class TrustAccessibilityService : AccessibilityService() {
     private lateinit var ocrEngine: OcrEngine
     private lateinit var screenCaptureHelper: ScreenCaptureHelper
     private lateinit var secureAnalysisEngine: SecureAnalysisEngine
+
+    private lateinit var nlpRiskDetector: com.axiom.trustos.core.detector.NlpRiskDetector
 
     private lateinit var networkIntelRepository: com.axiom.trustos.core.intel.NetworkIntelRepository
 
@@ -121,6 +124,16 @@ class TrustAccessibilityService : AccessibilityService() {
 
         ocrEngine = OcrEngine()
         screenCaptureHelper = ScreenCaptureHelper(this)
+
+        nlpRiskDetector = com.axiom.trustos.core.detector.NlpRiskDetector()
+        nlpRiskDetector.prepareModel(
+            onReady = {
+                android.util.Log.d(TAG, "NLP model ready")
+            },
+            onFailure = { exception ->
+                android.util.Log.e(TAG, "NLP model download failed", exception)
+            }
+        )
 
         android.util.Log.d(TAG, "================================")
         android.util.Log.d(TAG, "TrustOS Accessibility Service READY")
@@ -473,20 +486,59 @@ class TrustAccessibilityService : AccessibilityService() {
             assessment.level == RiskLevel.HIGH ||
                     assessment.level == RiskLevel.CRITICAL
 
-        if (!dangerous) {
-            android.util.Log.d(
-                TAG,
-                "No warning required"
+        if (dangerous) {
+            handleThreat(
+                packageName = packageName,
+                text = text,
+                url = detectedUrl,
+                assessment = assessment
             )
             return
         }
 
-        handleThreat(
-            packageName = packageName,
-            text = text,
-            url = detectedUrl,
-            assessment = assessment
+        android.util.Log.d(
+            TAG,
+            "No warning required from keyword-based detection — checking NLP in parallel"
         )
+
+        // NLP runs independently, even when the keyword-based detector
+        // found nothing dangerous. This is where phrasing that evades
+        // exact keyword matches can still be caught.
+        nlpRiskDetector.analyze(text) { nlpFindings ->
+
+            if (nlpFindings.isEmpty()) {
+                android.util.Log.d(TAG, "NLP found no additional signal")
+                return@analyze
+            }
+
+            android.util.Log.d(
+                TAG,
+                "NLP found ${nlpFindings.size} additional finding(s): " +
+                        nlpFindings.joinToString { it.reason }
+            )
+
+            val nlpOnlyAssessment = com.axiom.trustos.core.engine.TrustEngine()
+                .assess(nlpFindings)
+
+            val nlpDangerous =
+                nlpOnlyAssessment.level == RiskLevel.HIGH ||
+                        nlpOnlyAssessment.level == RiskLevel.CRITICAL
+
+            if (nlpDangerous) {
+
+                android.util.Log.d(
+                    TAG,
+                    "NLP-ONLY DETECTION crossed threshold — showing warning based on NLP signal"
+                )
+
+                handleThreat(
+                    packageName = packageName,
+                    text = text,
+                    url = detectedUrl,
+                    assessment = nlpOnlyAssessment
+                )
+            }
+        }
     }
 
     private fun handleThreat(
@@ -592,6 +644,7 @@ class TrustAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         ocrEngine.close()
+        nlpRiskDetector.close()
         warningOverlay.hide()
         super.onDestroy()
     }

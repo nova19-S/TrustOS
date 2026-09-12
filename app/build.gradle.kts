@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.axiom.trustos"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:entity-extraction:16.0.0-beta6")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

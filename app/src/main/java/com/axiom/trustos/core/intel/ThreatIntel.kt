@@ -1,5 +1,8 @@
 package com.axiom.trustos.core.intel
 
+import com.axiom.trustos.core.model.DetectionResult
+import java.security.MessageDigest
+
 /**
  * A coarse, privacy-safe category for a detected threat — never raw text,
  * never a raw URL. This is what gets "shared" with the mock network.
@@ -80,6 +83,59 @@ fun primaryCategoryForReasons(reasons: List<String>): ThreatCategory {
     )
 
     return priorityOrder.first { it in categories }
+}
+
+/**
+ * Computes a deterministic privacy-preserving fingerprint for a threat bundle.
+ *
+ * This function intentionally does NOT hash or include raw message text,
+ * URLs, domains, or detector payload details. It only derives coarse,
+ * bucketed structural features: the ThreatCategory, a bucketed count of
+ * distinct reason strings, whether any URL-related indicator was present,
+ * and a coarse risk bucket based on the summed riskContribution before any
+ * confidence weighting.
+ *
+ * The tuple is serialized to a canonical string and then hashed with SHA-256,
+ * producing a stable hex fingerprint. The same category and same bucketed
+ * feature values always produce the same fingerprint, which allows similar
+ * threat patterns to be recognized without exposing the underlying content.
+ */
+fun computeFingerprint(results: List<DetectionResult>, category: ThreatCategory): String {
+    val distinctReasonCount = results
+        .map { it.reason }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .size
+
+    val hasUrl = results.any { result ->
+        val reasonText = result.reason.lowercase()
+        val detectorText = result.detectorName.lowercase()
+        reasonText.contains("url") || detectorText.contains("url")
+    }
+
+    val totalRiskContribution = results.sumOf { it.riskContribution }
+
+    val reasonBucket = when {
+        distinctReasonCount == 0 -> "0"
+        distinctReasonCount <= 2 -> "1-2"
+        distinctReasonCount <= 4 -> "3-4"
+        else -> "5+"
+    }
+
+    val riskBucket = when {
+        totalRiskContribution < 30 -> "LOW"
+        totalRiskContribution < 70 -> "MEDIUM"
+        else -> "HIGH"
+    }
+
+    val canonical = "${category.name}|reasons:$reasonBucket|hasUrl:$hasUrl|riskBucket:$riskBucket"
+    return sha256Hex(canonical)
+}
+
+private fun sha256Hex(input: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val bytes = digest.digest(input.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
 }
 
 /**

@@ -2,6 +2,7 @@ package com.axiom.trustos.core.engine
 
 import com.axiom.trustos.core.intel.NetworkIntelRepository
 import com.axiom.trustos.core.intel.ThreatCategory
+import com.axiom.trustos.core.intel.computeFingerprint
 import com.axiom.trustos.core.intel.primaryCategoryForReasons
 import com.axiom.trustos.core.model.DetectionResult
 import com.axiom.trustos.core.model.RiskAssessment
@@ -35,6 +36,12 @@ class TrustEngine(
             .distinct()
 
         val category = primaryCategoryForReasons(reasons)
+        val fingerprint = computeFingerprint(results, category)
+
+        android.util.Log.d(
+            "TrustOSFingerprint",
+            "category=$category fingerprint=$fingerprint reasonsDistinct=${results.map { it.reason }.filter { it.isNotBlank() }.distinct().size} riskSum=${results.sumOf { it.riskContribution }}"
+        )
 
         // Record this as "last seen" regardless of trending status, so
         // demo tooling and the dashboard always know the most recent
