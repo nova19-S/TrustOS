@@ -50,6 +50,8 @@ class MainActivity : ComponentActivity() {
     private var showPrivacySettings by mutableStateOf(false)
     private var privacyProfile by mutableStateOf(PrivacyProfile.STANDARD)
 
+    private var showThreatHistory by mutableStateOf(false)
+
     private lateinit var privacySettingsRepository: PrivacySettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,6 +83,14 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
+                } else if (showThreatHistory) {
+
+                    ThreatHistoryScreen(
+                        onBack = {
+                            showThreatHistory = false
+                        }
+                    )
+
                 } else {
 
                     TrustOSDashboard(
@@ -90,6 +100,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onOpenPrivacySettings = {
                             showPrivacySettings = true
+                        },
+                        onOpenThreatHistory = {
+                            showThreatHistory = true
                         }
                     )
                 }
@@ -156,7 +169,8 @@ private sealed class UrlScanUiState {
 fun TrustOSDashboard(
     protectionEnabled: Boolean,
     onEnableOverlay: () -> Unit,
-    onOpenPrivacySettings: () -> Unit
+    onOpenPrivacySettings: () -> Unit,
+    onOpenThreatHistory: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val networkIntelRepository = remember {
@@ -292,57 +306,90 @@ fun TrustOSDashboard(
                 Text(text = "Privacy Settings")
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = onOpenThreatHistory,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Threat History")
+            }
+
             if (showDemoControls) {
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                val lastSeenCategory = remember(protectionEnabled) {
-                    networkIntelRepository.getLastSeenCategory()
-                }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
 
-                Button(
-                    onClick = {
-                        val category =
-                            lastSeenCategory
-                                ?: com.axiom.trustos.core.intel.ThreatCategory.GENERIC_SUSPICIOUS
-
-                        networkIntelRepository.simulateExternalReports(
-                            category = category,
-                            count = 3
+                        Text(
+                            text = "🛠 Developer / Demo Tools",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = if (lastSeenCategory != null) {
-                            "[DEMO] Simulate 3 Reports for Last Detected Threat"
-                        } else {
-                            "[DEMO] Simulate 3 Reports (no threat detected yet)"
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val lastSeenCategory = remember(protectionEnabled) {
+                            networkIntelRepository.getLastSeenCategory()
                         }
-                    )
-                }
 
-                if (lastSeenCategory != null) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                val category =
+                                    lastSeenCategory
+                                        ?: com.axiom.trustos.core.intel.ThreatCategory.GENERIC_SUSPICIOUS
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                                networkIntelRepository.simulateExternalReports(
+                                    category = category,
+                                    count = 3
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (lastSeenCategory != null) {
+                                    "Simulate 3 Reports for Last Detected Threat"
+                                } else {
+                                    "Simulate 3 Reports (no threat detected yet)"
+                                },
+                                fontSize = 13.sp
+                            )
+                        }
 
-                    Text(
-                        text = "Will target: ${lastSeenCategory.name}",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                        if (lastSeenCategory != null) {
 
-                Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
-                Button(
-                    onClick = {
-                        networkIntelRepository.resetAll()
-                        threatVaultRepository.clearAll()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(text = "[DEMO] Reset Network Data")
+                            Text(
+                                text = "Will target: ${lastSeenCategory.name}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = {
+                                networkIntelRepository.resetAll()
+                                threatVaultRepository.clearAll()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(text = "Reset Network Data", fontSize = 13.sp)
+                        }
+                    }
                 }
             }
 
@@ -354,6 +401,129 @@ fun TrustOSDashboard(
                 is UrlScanUiState.Scanned -> ScanResultState(
                     assessment = currentState.assessment
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThreatHistoryScreen(
+    onBack: () -> Unit
+) {
+
+    val context = LocalContext.current
+
+    val threatVaultRepository = remember {
+        com.axiom.trustos.core.threat.ThreatVaultRepository(context.applicationContext)
+    }
+
+    val threats = remember {
+        threatVaultRepository.getThreats().sortedByDescending { it.createdAt }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize()
+    ) { innerPadding ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+
+            Text(
+                text = "Threat History",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "${threats.size} confirmed threat(s) blocked and reported",
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            if (threats.isEmpty()) {
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "No threats blocked yet",
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+
+            } else {
+
+                threats.forEach { threat ->
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+
+                            Text(
+                                text = threat.threatType.replace("_", " "),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Text(
+                                text = "From: ${threat.packageName}",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            if (!threat.indicator.isNullOrBlank()) {
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Text(
+                                    text = threat.indicator,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Risk Score: ${threat.riskScore}/100",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            androidx.compose.material3.TextButton(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = "Back")
             }
         }
     }
