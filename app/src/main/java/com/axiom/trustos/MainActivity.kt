@@ -1,5 +1,6 @@
 package com.axiom.trustos
 
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Checkbox
 import androidx.compose.ui.platform.LocalContext
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var privacySettingsRepository: PrivacySettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         privacySettingsRepository =

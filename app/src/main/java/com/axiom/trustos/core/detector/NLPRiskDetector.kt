@@ -52,9 +52,12 @@ class NlpRiskDetector {
     fun analyze(text: String, onResult: (List<DetectionResult>) -> Unit) {
 
         if (!modelReady) {
+            android.util.Log.w("TrustOSNlp", "analyze() called but model is NOT ready yet — skipping")
             onResult(emptyList())
             return
         }
+
+        android.util.Log.d("TrustOSNlp", "Model ready, running entity extraction")
 
         val params = EntityExtractionParams.Builder(text).build()
 
@@ -65,9 +68,9 @@ class NlpRiskDetector {
                     .flatMap { annotation -> annotation.entities }
                     .map { entity -> entity.type }
                     .toSet()
+                android.util.Log.d("TrustOSNlp","Entity found: $entityTypes")
 
                 val findings = mutableListOf<DetectionResult>()
-
                 val hasMoney = entityTypes.contains(Entity.TYPE_MONEY)
                 val hasUrl = entityTypes.contains(Entity.TYPE_URL)
                 val hasPhone = entityTypes.contains(Entity.TYPE_PHONE)

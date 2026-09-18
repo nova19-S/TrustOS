@@ -2,4 +2,9 @@
 <resources>
 
     <style name="Theme.TrustOS" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.TrustOS.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.TrustOS</item>
+    </style>
 </resources>

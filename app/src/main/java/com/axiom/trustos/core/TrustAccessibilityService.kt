@@ -584,11 +584,7 @@ class TrustAccessibilityService : AccessibilityService() {
                 indicator = url?.let {
                     normalizeUrl(it)
                 },
-                threatType = if (url != null) {
-                    "SUSPICIOUS_URL"
-                } else {
-                    "SUSPICIOUS_CONTENT"
-                },
+                threatType = com.axiom.trustos.core.intel.primaryCategoryForReasons(assessment.reasons).name,
                 riskScore = assessment.score,
                 confidence = assessment.confidence,
                 reasons = assessment.reasons,
