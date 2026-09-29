@@ -1,5 +1,16 @@
 package com.axiom.trustos
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.History
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Checkbox
@@ -168,6 +179,58 @@ private sealed class UrlScanUiState {
 }
 
 @Composable
+private fun GradientActionButton(
+    text: String,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    val gradient = androidx.compose.ui.graphics.Brush.horizontalGradient(
+        colors = listOf(
+            androidx.compose.ui.graphics.Color(0xFF1E3A8A),
+            androidx.compose.ui.graphics.Color(0xFF0EA5A4)
+        )
+    )
+
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(gradient)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = text,
+                color = androidx.compose.ui.graphics.Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 16.sp,
+                modifier = Modifier.weight(1f)
+            )
+
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Default.ArrowForward,
+                contentDescription = null,
+                tint = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun TrustOSDashboard(
     protectionEnabled: Boolean,
     onEnableOverlay: () -> Unit,
@@ -201,9 +264,10 @@ fun TrustOSDashboard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            Text(
-                text = "🛡️",
-                fontSize = 52.sp
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = R.mipmap.ic_launcher_foreground),
+                contentDescription = "TrustOS Logo",
+                modifier = Modifier.size(90.dp)
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -269,13 +333,22 @@ fun TrustOSDashboard(
                 value = urlInput,
                 onValueChange = { urlInput = it },
                 label = { Text("Enter a URL to scan") },
+                leadingIcon = {
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Link,
+                        contentDescription = null
+                    )
+                },
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
+            GradientActionButton(
+                text = "Scan URL",
+                leadingIcon = androidx.compose.material.icons.Icons.Default.Link,
                 onClick = {
                     if (urlInput.isBlank()) {
                         scanState = UrlScanUiState.BlankInput
@@ -285,37 +358,32 @@ fun TrustOSDashboard(
                             assessment = trustEngine.assess(detections)
                         )
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "Scan URL")
-            }
+                }
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Button(
-                onClick = onEnableOverlay,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "Enable TrustOS Protection")
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
-                onClick = onOpenPrivacySettings,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "Privacy Settings")
-            }
+            GradientActionButton(
+                text = "Enable TrustOS Protection",
+                leadingIcon = androidx.compose.material.icons.Icons.Default.Shield,
+                onClick = onEnableOverlay
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Button(
-                onClick = onOpenThreatHistory,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "Threat History")
-            }
+            GradientActionButton(
+                text = "Privacy Settings",
+                leadingIcon = androidx.compose.material.icons.Icons.Default.Settings,
+                onClick = onOpenPrivacySettings
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            GradientActionButton(
+                text = "Threat History",
+                leadingIcon = androidx.compose.material.icons.Icons.Default.History,
+                onClick = onOpenThreatHistory
+            )
 
             if (showDemoControls) {
 
@@ -533,7 +601,42 @@ private fun ThreatHistoryScreen(
 
 @Composable
 private fun NeutralScanState() {
-    MessageCard("No URL scanned yet")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Icon(
+                imageVector = androidx.compose.material.icons.Icons.Default.Shield,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column {
+                Text(
+                    text = "No URL scanned yet",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Scan a link to check for potential threats.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -686,8 +789,18 @@ private fun PrivacySettingsScreen(
         )
     }
 
+    val backgroundGradient = androidx.compose.ui.graphics.Brush.verticalGradient(
+        colors = listOf(
+            androidx.compose.ui.graphics.Color.White,
+            androidx.compose.ui.graphics.Color(0xFFE0F2F1)
+        )
+    )
+
     Scaffold(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(backgroundGradient),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent
     ) { innerPadding ->
 
         Column(
