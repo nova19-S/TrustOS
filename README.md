@@ -407,20 +407,6 @@ TrustOS uses Android accessibility capabilities for its screen-analysis workflow
 
 ---
 
-# 📸 Screenshots & Demo
-
-Screenshots can be added here for:
-
-1. TrustOS home screen
-2. Threat detection warning
-3. Threat details
-4. Threat history / Threat Vault
-5. Privacy controls
-6. Network intelligence / trend view
-7. OCR-based detection
-
----
-
 # 👥 Team AXIOM6
 
 | Member | Responsibility |
